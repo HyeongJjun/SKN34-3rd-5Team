@@ -1,0 +1,24 @@
+# 개발용 기본 구성: 백엔드 Django / 프론트엔드 React (앱 구현은 생략)
+# 실행: docker compose up -d
+# 종료: docker compose down (DB 데이터 유지)
+# Django DB 연결: HOST=localhost, PORT=5432, NAME/USER/PASSWORD=baseball
+# ponytail: 로컬 개발 전용 계정. 배포 시 비밀번호를 별도 비밀정보로 관리할 것.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: baseball
+      POSTGRES_USER: baseball
+      POSTGRES_PASSWORD: baseball
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U baseball -d baseball"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_data:
