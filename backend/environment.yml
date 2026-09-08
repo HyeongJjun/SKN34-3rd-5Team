@@ -1,6 +1,0 @@
-name: skn34-backend
-channels:
-  - conda-forge
-  - nodefaults
-dependencies:
-  - python=3.12
