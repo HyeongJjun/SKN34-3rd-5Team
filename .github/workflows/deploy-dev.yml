@@ -20,3 +20,4 @@ jobs:
             cd ~/SKN34-3rd-5Team
             git pull origin develop
             docker compose up -d --build
+            docker compose exec -T backend python manage.py migrate
