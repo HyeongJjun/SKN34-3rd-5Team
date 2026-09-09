@@ -52,6 +52,6 @@ jobs:
         if: always()
         run: |
           curl -H "Content-Type: application/json" \
-          -d '{"content":"🔔 Discord 알림 테스트 성공"}' \
+          -d '{"content":"🔔 Discord 알림 테스트 성공!"}' \
           "${{ secrets.DISCORD_WEBHOOK_URL }}"
 ```
