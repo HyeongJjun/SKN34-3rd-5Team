@@ -94,13 +94,3 @@ jobs:
           curl -H "Content-Type: application/json" \
             -d "{\"content\":\"${MESSAGE}\"}" \
             "${{ secrets.DISCORD_WEBHOOK_URL }}"
-
-      # =========================================================
-      # ⚠️ [아래 삭제 영역] 연동 테스트용 코드 (확인 후 삭제하세요)
-      # =========================================================
-      - name: Discord Connection Test (지울 것)
-        run: |
-          ACTION_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          curl -H "Content-Type: application/json" \
-            -d "{\"content\":\"🔔 **[디스코드 연동 테스트]**\n• **Repository:** ${{ github.repository }}\n• **Action 링크:** ${ACTION_URL}\n정상적으로 연결되었습니다!\"}" \
-            "${{ secrets.DISCORD_WEBHOOK_URL }}"
