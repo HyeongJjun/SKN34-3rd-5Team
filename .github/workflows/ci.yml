@@ -48,4 +48,10 @@ jobs:
           curl -H "Content-Type: application/json" \
           -d '{"content":"❌ CI 실패\nRepository: ${{ github.repository }}\nBranch: ${{ github.head_ref }}"}' \
           "${{ secrets.DISCORD_WEBHOOK_URL }}"
+      - name: Discord test
+        if: always()
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"content":"🔔 Discord 알림 테스트 성공"}' \
+          "${{ secrets.DISCORD_WEBHOOK_URL }}"
 ```
