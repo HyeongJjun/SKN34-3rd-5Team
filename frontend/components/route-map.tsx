@@ -1,0 +1,124 @@
+"use client";
+
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { loadKakaoMaps, type KakaoMap, type KakaoMaps, type KakaoOverlay, type KakaoPlace, type MapClickEvent } from "@/lib/kakao-maps";
+import { areValidCoordinates, type RouteStop } from "@/lib/routes";
+import { Icon } from "./icons";
+
+type Props = { stops: RouteStop[]; searchable?: boolean; onAddStop?: (stop: RouteStop) => void };
+
+export function RouteMap({ stops, searchable = false, onAddStop }: Props) {
+  const mapNode = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<KakaoMap | null>(null);
+  const [sdk, setSdk] = useState<KakaoMaps | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<KakaoPlace[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchNote, setSearchNote] = useState("");
+  const [selected, setSelected] = useState<RouteStop | null>(null);
+  const [notice, setNotice] = useState("");
+  const sequence = useRef(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const searchId = useId();
+  const first = stops[0];
+  const fitRoute = useEffectEvent((map: KakaoMap, maps: KakaoMaps) => {
+    const points = stops.filter(stop => areValidCoordinates(stop.lat, stop.lng)).map(stop => new maps.LatLng(stop.lat, stop.lng));
+    if (points.length > 1) { const bounds = new maps.LatLngBounds(); points.forEach(point => bounds.extend(point)); map.setBounds(bounds, 45, 35, 35, 35); }
+    else if (points[0]) map.setCenter(points[0]);
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    loadKakaoMaps().then(value => { if (!cancelled) { setSdk(value); setError(""); } }).catch(() => {
+      if (!cancelled) setError("지도를 불러오지 못했어요. 다시 시도하거나 카카오맵에서 장소를 확인해 주세요.");
+    });
+    return () => { cancelled = true; sequence.current += 1; clearTimeout(searchTimer.current); };
+  }, [attempt]);
+
+  useEffect(() => {
+    if (!sdk || !mapNode.current) return;
+    const map = new sdk.Map(mapNode.current, { center: new sdk.LatLng(37.5162, 127.07594), level: 5, draggable: searchable, scrollwheel: searchable, disableDoubleClickZoom: !searchable });
+    mapRef.current = map;
+    const onClick = (event: MapClickEvent) => {
+      const lat = event.latLng.getLat(), lng = event.latLng.getLng();
+      if (searchable && areValidCoordinates(lat, lng)) { setSelected({ name: "", lat, lng, category: "내 장소" }); setNotice(""); }
+    };
+    if (searchable) sdk.event.addListener(map, "click", onClick);
+    const observer = new ResizeObserver(() => { const center = map.getCenter(); map.relayout(); if (!searchable) fitRoute(map, sdk); else map.setCenter(center); });
+    observer.observe(mapNode.current);
+    return () => { observer.disconnect(); if (searchable) sdk.event.removeListener(map, "click", onClick); mapRef.current = null; };
+  }, [sdk, searchable]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!sdk || !map) return;
+    const overlays: KakaoOverlay[] = [];
+    const path = stops.filter(stop => areValidCoordinates(stop.lat, stop.lng)).map((stop, index) => {
+      const point = new sdk.LatLng(stop.lat, stop.lng);
+      const label = document.createElement("span");
+      label.className = "route-map-pin";
+      label.textContent = String(index + 1);
+      label.title = `${index + 1}. ${stop.name}`;
+      label.setAttribute("aria-label", label.title);
+      overlays.push(new sdk.CustomOverlay({ map, position: point, content: label, yAnchor: 1, zIndex: 2 }));
+      return point;
+    });
+    if (path.length > 1) {
+      overlays.push(new sdk.Polyline({ map, path, strokeWeight: 4, strokeColor: "#246bf3", strokeOpacity: .85, strokeStyle: "solid", endArrow: true }));
+    }
+    fitRoute(map, sdk);
+    return () => overlays.forEach(overlay => overlay.setMap(null));
+  }, [sdk, stops]);
+
+  function search() {
+    if (!query.trim() || !sdk || !mapRef.current || searching) return;
+    const request = ++sequence.current;
+    setSearching(true); setSearchNote(""); setResults([]); setSelected(null); setNotice("");
+    searchTimer.current = setTimeout(() => {
+      if (request !== sequence.current) return;
+      sequence.current += 1; setSearching(false); setSearchNote("검색이 오래 걸리고 있어요. 다시 검색해 주세요.");
+    }, 10000);
+    new sdk.services.Places().keywordSearch(query.trim(), (places, status) => {
+      if (request !== sequence.current) return;
+      clearTimeout(searchTimer.current); setSearching(false);
+      if (status === sdk.services.Status.OK) {
+        const validPlaces = places.filter(place => place.x.trim() && place.y.trim() && areValidCoordinates(Number(place.y), Number(place.x)));
+        setResults(validPlaces);
+        if (!validPlaces.length) setSearchNote("위치가 확인되는 장소가 없어요. 다른 이름으로 검색해 주세요.");
+      }
+      else setSearchNote(status === sdk.services.Status.ZERO_RESULT ? "검색 결과가 없어요. 지역이나 장소 이름을 바꿔 보세요." : "장소 검색에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    }, { location: mapRef.current.getCenter(), size: 5 });
+  }
+
+  function add(stop: RouteStop) {
+    if (!onAddStop) return;
+    if (!stop.name.trim() || !areValidCoordinates(stop.lat, stop.lng)) { setNotice("장소의 위치를 확인하지 못했어요. 다른 장소를 선택해 주세요."); return; }
+    if (stops.length >= 12) { setNotice("방문 장소는 최대 12곳까지 추가할 수 있어요."); return; }
+    if (stops.some(item => item.name === stop.name && item.lat === stop.lat && item.lng === stop.lng)) { setNotice("이미 추가한 장소예요."); return; }
+    onAddStop(stop); setSelected(null); setNotice(`${stop.name}을(를) 방문 장소에 추가했어요.`);
+  }
+
+  return (
+    <section className="route-map" aria-label={searchable ? "방문 장소 검색과 지도" : "코스 지도"}>
+      {searchable && <div className="route-map-search" role="search">
+        <label htmlFor={searchId} className="sr-only">지도에서 장소 검색</label>
+        <Icon name="search" size={19} />
+        <input id={searchId} value={query} maxLength={100} onChange={event => { setQuery(event.target.value); sequence.current += 1; clearTimeout(searchTimer.current); setSearching(false); setResults([]); setSearchNote(""); }} onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); search(); } }} placeholder="구장, 맛집, 카페 이름으로 검색" />
+        <button type="button" onClick={search} disabled={!sdk || searching || !query.trim()}>{searching ? <><span className="ui-spinner" />검색 중</> : "검색"}</button>
+      </div>}
+      <div className="route-map-stage">
+        <div ref={mapNode} className="route-map-canvas" aria-label="카카오 지도" />
+        {!sdk && <div className="route-map-placeholder" role="status"><Icon name="stadium" size={38} /><strong>{error ? "지도를 잠시 불러오지 못했어요" : "코스를 지도에 펼치는 중"}</strong><p>{error || "방문할 장소와 순서를 준비하고 있어요."}</p>{error ? <button className="button button-secondary" type="button" onClick={() => { setError(""); setAttempt(value => value + 1); }}>다시 불러오기</button> : <span className="ui-spinner" />}</div>}
+        {sdk && <span className="route-map-label">{searchable ? "지도에서 위치를 눌러 직접 추가할 수 있어요" : "코스 미리보기"}</span>}
+      </div>
+      <p className="route-map-caption">선은 방문 순서를 연결한 표시예요. 실제 도보·차량 길찾기는 카카오맵에서 확인해 주세요.{first && <> <a href={`https://map.kakao.com/link/map/${encodeURIComponent(first.name)},${first.lat},${first.lng}`} target="_blank" rel="noreferrer">카카오맵 열기 ↗</a></>}</p>
+      {searching && <p className="route-map-note" role="status">장소를 검색하고 있어요.</p>}
+      {searchNote && <p className="route-map-note" role="status">{searchNote}</p>}
+      {results.length > 0 && <ul className="route-map-results" aria-label="장소 검색 결과">{results.map(place => <li key={place.id}><div><strong>{place.place_name}</strong><span>{place.road_address_name || place.address_name}</span></div><button type="button" aria-label={`${place.place_name} 방문 장소에 추가`} onClick={() => add({ name: place.place_name, lat: Number(place.y), lng: Number(place.x), category: place.category_group_name || "방문 장소" })}>추가 +</button></li>)}</ul>}
+      {selected && <div className="route-map-selected"><label htmlFor={`${searchId}-name`}>선택한 위치의 이름</label><input id={`${searchId}-name`} placeholder="예: 친구와 만날 장소" maxLength={70} value={selected.name} onChange={event => setSelected({ ...selected, name: event.target.value })} /><button className="button button-primary" type="button" disabled={!selected.name.trim()} onClick={() => add({ ...selected, name: selected.name.trim() })}>방문 장소에 추가</button></div>}
+      {notice && <p className="route-map-note" role="status">{notice}</p>}
+    </section>
+  );
+}
