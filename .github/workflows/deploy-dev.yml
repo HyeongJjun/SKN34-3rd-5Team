@@ -1,12 +1,54 @@
-name: Deploy Develop
+name: CI & CD Workflow
 
 on:
+  pull_request:
+    branches:
+      - develop
   push:
     branches:
       - develop
 
 jobs:
-  deploy:
+  # 1. CI 검증
+  ci-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Django check
+        working-directory: backend
+        run: python manage.py check
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Next.js build
+        working-directory: frontend
+        run: npm run build
+
+  # 2. CD 배포 (develop 브랜치 push/merge 시 실행)
+  cd-deploy:
+    needs: ci-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
 
     steps:
@@ -21,3 +63,44 @@ jobs:
             git pull origin develop
             docker compose up -d --build
             docker compose exec -T backend python manage.py migrate
+
+  # 3. Discord 알림
+  notify-discord:
+    needs: [ci-test, cd-deploy]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      # [실패 시 전송되는 코드]
+      - name: Send Discord Failure Notification
+        if: failure()
+        run: |
+          IF_CI_FAILED="${{ needs.ci-test.result }}"
+          IF_CD_FAILED="${{ needs.cd-deploy.result }}"
+
+          if [ "$IF_CI_FAILED" = "failure" ]; then
+            STATUS="❌ [CI 실패]"
+            DETAILS="CI 검증 작업(테스트/빌드) 중 오류가 발생했습니다."
+          elif [ "$IF_CD_FAILED" = "failure" ]; then
+            STATUS="❌ [배포 실패]"
+            DETAILS="EC2 배포 작업 중 오류가 발생했습니다."
+          fi
+
+          ACTION_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+
+          MESSAGE="**${STATUS}**\n• **Repository:** ${{ github.repository }}\n• **Branch:** ${BRANCH}\n• **상세 내용:** ${DETAILS}\n• **Action 링크:** ${ACTION_URL}"
+
+          curl -H "Content-Type: application/json" \
+            -d "{\"content\":\"${MESSAGE}\"}" \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+
+      # =========================================================
+      # ⚠️ [아래 삭제 영역] 연동 테스트용 코드 (확인 후 삭제하세요)
+      # =========================================================
+      - name: Discord Connection Test (지울 것)
+        run: |
+          ACTION_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -H "Content-Type: application/json" \
+            -d "{\"content\":\"🔔 **[디스코드 연동 테스트]**\n• **Repository:** ${{ github.repository }}\n• **Action 링크:** ${ACTION_URL}\n정상적으로 연결되었습니다!\"}" \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
