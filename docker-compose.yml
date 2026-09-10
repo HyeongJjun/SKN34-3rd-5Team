@@ -1,7 +1,6 @@
 services:
   db:
     image: pgvector/pgvector:pg18
-    container_name: postgres
     restart: unless-stopped
     ports:
       - "5432:5432"
@@ -12,7 +11,6 @@ services:
 
   backend:
     build: ./backend
-    container_name: django
     restart: unless-stopped
     volumes:
       - ./backend:/app
@@ -28,7 +26,6 @@ services:
 
   frontend:
     build: ./frontend
-    container_name: nextjs
     restart: unless-stopped
     volumes:
       - ./frontend:/app
@@ -43,7 +40,6 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: nginx
     restart: unless-stopped
     ports:
       - "80:80"
