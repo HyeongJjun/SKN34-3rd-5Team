@@ -123,6 +123,37 @@
 .info-checklist-item h3 { font-size: 13px; font-weight: 650; margin: 0 0 9px; }
 .info-checklist-item p { font-size: 11px; color: #909bab; line-height: 1.8; margin: 0; }
 .info-checklist-check { margin-left: auto; color: #6094eb; font-size: 12px; }
+.info-stadium-detail-link { display: inline-flex; align-items: baseline; gap: 8px; }
+.info-stadium-detail-link span { color: #8198bc; font-size: 14px; font-weight: 500; }
+.info-stadium-detail-link:hover { color: var(--blue); }
+.stadium-detail-back { display: flex; width: fit-content; margin-bottom: 30px; font-size: 12px; color: #7285a0; }
+.stadium-detail-back:hover { color: var(--blue); }
+.stadium-detail-intro > .eyebrow { display: block; margin: 0; color: var(--blue); }
+.stadium-detail-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: 60px; align-items: center; padding-top: 52px; }
+.stadium-detail-art { position: relative; border-radius: 22px; overflow: hidden; aspect-ratio: 1.4; }
+.stadium-detail-art-label { position: absolute; top: 24px; left: 26px; font-size: 10px; letter-spacing: 1.8px; opacity: .7; }
+.stadium-detail-art .info-stadium-illustration { padding: 28px 10px 8px; }
+.stadium-detail-info h2 { margin: 10px 0 26px; font-size: 29px; letter-spacing: -1.2px; }
+.stadium-detail-facts { display: grid; gap: 23px; margin: 0 0 32px; }
+.stadium-detail-facts > div { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 20px; align-items: baseline; }
+.stadium-detail-facts dt { color: #8a98aa; font-size: 12px; }
+.stadium-detail-facts dd { color: #40516b; font-size: 14px; line-height: 1.85; margin: 0; overflow-wrap: anywhere; }
+.stadium-detail-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.stadium-detail-actions .button { min-height: 46px; font-size: 12px; justify-content: center; gap: 9px; }
+@media (max-width: 1000px) {
+  .stadium-detail-content { gap: 30px; }
+  .stadium-detail-facts > div { gap: 12px; }
+}
+@media (max-width: 760px) {
+  .stadium-detail-content { grid-template-columns: minmax(0, 1fr); gap: 30px; padding-top: 28px; }
+  .stadium-detail-art { aspect-ratio: 1.7; border-radius: 16px; }
+  .stadium-detail-art-label { top: 18px; left: 20px; font-size: 9px; }
+  .stadium-detail-back { margin-bottom: 25px; }
+  .stadium-detail-info h2 { font-size: 24px; margin-bottom: 23px; }
+  .stadium-detail-facts dd { font-size: 13px; }
+  .stadium-detail-actions { align-items: stretch; }
+  .stadium-detail-actions .button { flex: 1 1 220px; }
+}
 @media (max-width: 1000px) {
   .info-stadium-grid { gap: 17px; }
   .info-filter-bar { align-items: flex-start; }

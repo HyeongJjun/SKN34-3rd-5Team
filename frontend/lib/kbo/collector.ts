@@ -26,7 +26,9 @@ async function collectDueDays(now: Date): Promise<void> {
       const due = previous?.control.nextCheckAt ?? store.retries[date]?.nextCheckAt;
       const startupRefresh = date === today && runtime.startupRefreshPending;
       const needsPitcherFields = previous?.failures === 0 && previous.data.games.some(game => !Object.hasOwn(game.away, "startingPitcher") || !Object.hasOwn(game.home, "startingPitcher"));
-      if (!startupRefresh && !needsPitcherFields && due && Date.parse(due) > now.getTime()) continue;
+      const needsIndividualRankings = previous?.failures === 0
+        && (!previous.data.individualRankings || !previous.data.individualRankings.pitchers.length || !previous.data.individualRankings.hitters.length);
+      if (!startupRefresh && !needsPitcherFields && !needsIndividualRankings && due && Date.parse(due) > now.getTime()) continue;
       // Consume only after acquiring the shared lock. A failed source request
       // then follows normal backoff instead of being forced again by visitors.
       if (startupRefresh) runtime.startupRefreshPending = false;
@@ -39,7 +41,7 @@ async function collectDueDays(now: Date): Promise<void> {
         // is never acknowledged if storing the result fails.
         await writeKboStore(updated);
         store = updated;
-        console.info(`[KBO] ${date}: ${data.games.length} games, ${data.standings.length} teams, ${record.control.mode}`);
+        console.info(`[KBO] ${date}: ${data.games.length} games, ${data.standings.length} teams, ${data.individualRankings?.pitchers.length ?? 0} pitchers, ${data.individualRankings?.hitters.length ?? 0} hitters, ${record.control.mode}`);
       } catch {
         const failedAt = new Date();
         if (previous) {

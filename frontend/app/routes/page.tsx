@@ -8,6 +8,7 @@ import { formatRouteDate } from "@/components/route-card";
 import { RouteBoardSkeleton, RouteListSkeleton } from "@/components/route-skeleton";
 import { useLikedRoutes, useRoutes, useRoutesReady, useRouteViews } from "@/lib/routes";
 import { routeContentToText } from "@/lib/route-content";
+import { CommunityBoardTabs, TeamCommunityBoard } from "@/components/team-community-board";
 
 const stadiums = ["전체", "잠실", "고척", "인천", "수원", "대전", "대구", "광주", "사직", "창원"];
 type SearchField = "all" | "title" | "content" | "author";
@@ -68,6 +69,8 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
         <div><p className="eyebrow">KBO COMMUNITY</p><h1>팬 커뮤니티</h1><p className="community-description">다른 팬들의 하루를 만나고, 나만의 직관 코스를 나눠보세요.</p></div>
         <Link href={writeHref} className="button button-primary community-write"><Icon name="book" size={18}/>글쓰기</Link>
       </header>
+
+      <CommunityBoardTabs active="routes"/>
 
       <div className="community-layout">
         <section className="community-board" aria-labelledby="community-board-heading">
@@ -140,6 +143,7 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
 
 function RoutesQuery() {
   const params = useSearchParams();
+  if (params.get("board") === "free") return <TeamCommunityBoard key={params.toString()} teamCode={params.get("team") ?? ""} postId={params.get("post") ?? ""}/>;
   const requestedStadium = params.get("stadium") ?? "전체";
   const initialStadium = stadiums.find(stadium => normalize(requestedStadium).includes(stadium)) ?? "전체";
   return <CommunityBoard key={params.toString()} initialQuery={params.get("q") ?? ""} initialStadium={initialStadium} deleted={params.get("deleted") === "1"}/>;

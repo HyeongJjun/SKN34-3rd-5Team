@@ -2,6 +2,8 @@
 
 흰색·파란색, 큰 제목과 야구공 배경을 사용하는 직관 루트 서비스의 프론트 프로토타입입니다. Next.js App Router, React, TypeScript로 구현했습니다.
 
+백엔드 담당자는 API 계약, 환경변수 소유권, 로컬 저장 데이터의 이전 방법을 정리한 [프론트엔드 → 백엔드 연동 인계서](../docs/FRONTEND_BACKEND_HANDOFF.md)를 먼저 확인하세요.
+
 ## 실행
 
 `frontend` 폴더에서 실행합니다.

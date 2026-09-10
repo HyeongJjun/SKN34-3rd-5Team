@@ -13,6 +13,7 @@ const groups = [
       { title: "구장 정보", href: "/stadiums" },
       { title: "경기 일정", href: "/schedule" },
       { title: "순위", href: "/standings" },
+      { title: "KBO 리그 H/L", href: "/highlights" },
       { title: "야구 가이드", href: "/guide" },
     ],
   },

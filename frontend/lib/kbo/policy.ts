@@ -38,6 +38,16 @@ export function assertCompleteCollection(previous: CollectionRecord | null, data
   if (data.standings.length !== 10 || new Set(data.standings.map(team => team.teamCode)).size !== 10) throw new Error("10개 구단의 순위를 확인하지 못했습니다.");
   if (new Set(data.games.map(game => game.id)).size !== data.games.length || data.games.some(game => game.date !== date)) throw new Error("경기 식별 정보가 올바르지 않습니다.");
   if (data.games.some(game => game.status === "final" && !isGameComplete(game))) throw new Error("종료 경기의 최종 점수가 누락되었습니다.");
+  if (data.individualRankings !== undefined) {
+    const { pitchers, hitters } = data.individualRankings;
+    if (!Array.isArray(pitchers) || !Array.isArray(hitters) || !pitchers.length || !hitters.length) throw new Error("개인 순위를 완전하게 확인하지 못했습니다.");
+    for (const [label, rows] of [["투수", pitchers], ["타자", hitters]] as const) {
+      if (new Set(rows.map(row => row.playerCode)).size !== rows.length
+        || rows.some(row => !Number.isInteger(row.rank) || row.rank < 1 || !row.playerCode || !row.player || !row.teamCode || !row.team)) {
+        throw new Error(`${label} 개인 순위 정보가 올바르지 않습니다.`);
+      }
+    }
+  }
   if (previous?.data.date === date) {
     const ids = new Set(data.games.map(game => game.id));
     if (previous.data.games.some(game => !ids.has(game.id))) throw new Error("기존 경기 일부가 응답에서 누락되었습니다.");
@@ -99,7 +109,7 @@ export function recordSuccessfulCollection(previous: CollectionRecord | null, da
   assertCompleteCollection(previous, data, date);
   const { control, warning } = planCollection(previous, data, now);
   // Provider timestamps and crawl times do not represent changes to sports data.
-  const fingerprint = (value: KboSourceData) => JSON.stringify([value.date, value.games, value.standings]);
+  const fingerprint = (value: KboSourceData) => JSON.stringify([value.date, value.games, value.standings, value.individualRankings]);
   const changed = !previous || fingerprint(previous.data) !== fingerprint(data);
   return { data, fetchedAt: now.toISOString(), updatedAt: changed ? now.toISOString() : previous.updatedAt, control, failures: 0, warning };
 }

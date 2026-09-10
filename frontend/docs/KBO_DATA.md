@@ -1,6 +1,6 @@
-# 티빙 KBO 일정·순위 수집
+# 티빙 KBO 일정·팀·선수 상세 수집
 
-메인은 한국시간 당일 경기와 10개 구단 순위를 미리보기로 표시합니다. 카테고리 메뉴의 경기 일정 `/schedule`은 2026년 월·날짜별 경기 결과·투수·구장과 구단 필터를, 순위 `/standings`는 타율·평균자책·최근 10경기까지 전체 12개 항목을 표시합니다. 경기 카드·상세 페이지용 크롤러를 따로 두지 않으며 같은 저장 결과를 각 화면에 맞춰 표시합니다.
+메인은 한국시간 당일 경기와 10개 구단 순위를 미리보기로 표시합니다. 카테고리 메뉴의 경기 일정 `/schedule`은 2026년 월·날짜별 경기 결과·투수·구장과 구단 필터를 표시합니다. 순위 `/standings`는 팀 순위 12개 항목과 투수·타자 개인 순위 전체 기록을 탭으로 표시합니다. 팀명은 `/standings/teams/[code]`, 선수명은 `/standings/players/[code]` 상세로 이어집니다. 메인에는 개인 순위를 표시하지 않습니다. 경기 카드·메인·상세 페이지용 크롤러를 따로 두지 않으며 한 번 수집해 저장한 결과를 각 화면에 맞춰 사용합니다.
 
 일정의 `pitcherName`은 투수 이름으로 제공되며 값이 없으면 미정으로 표시합니다. 해당 일자 응답은 승리·패전·세이브 투수, 방송 채널, 이닝별 기록은 제공하지 않아 추가 수집 없이 임의로 채우지 않습니다. 2026년 3월의 시범경기도 일정에 포함되며, 소스에 리그 구분이 없어 일정 전체에 정규시즌 표기를 붙이지 않습니다. 팀 순위는 정규리그 자료입니다.
 
@@ -10,15 +10,26 @@
 
 시작 시 수집은 프로세스마다 한 번만 요청하므로 같은 서버에서 페이지를 열거나 코드가 다시 로드되어도 반복되지 않습니다. 다른 수집 작업이 파일 잠금을 보유 중이면 시작 수집 요청을 유지한 채 다음 점검에서 재시도합니다. 수집 자체가 실패하면 마지막 성공 자료를 보존하고 기존 실패 재시도 간격을 따릅니다. 이전 날짜의 미완료 경기는 저장된 확인 시각을 계속 따릅니다.
 
-1. `lib/kbo/tving.ts`: 티빙의 공개 일정·순위 JSON 응답을 읽고 검증합니다.
+1. `lib/kbo/tving.ts`: 티빙의 공개 일정·팀 순위·투수 순위·타자 순위 JSON 응답을 함께 읽고 검증합니다.
 2. `lib/kbo/policy.ts`: 다음 수집 시각과 경기 완료·순위 재확인을 결정합니다.
 3. `lib/kbo/store.ts`: `.cache/kbo/collection.json`에 결과와 수집 상태를 함께 저장합니다.
 4. `GET /kbo-api`: 브라우저에 저장된 당일 정보를 제공합니다.
 5. `components/game-schedule.tsx`: 화면이 보일 때 우리 API를 60초마다 확인합니다. 숨겨진 탭에서는 중단하고 복귀할 때 다시 확인합니다.
 6. `lib/kbo/archive.ts`: 2026년 월별 경기일을 확인하고 아직 보관하지 않은 날짜를 순차 수집합니다. 오늘은 이 수집기에서 요청하지 않습니다.
-7. `GET /kbo-api/schedule?month=2026-MM`: 월별 보관 자료에 공통 수집기의 오늘 자료를 합쳐 제공합니다. `/standings`는 메인과 동일한 `GET /kbo-api`의 순위 전체 필드를 사용합니다.
+7. `GET /kbo-api/schedule?month=2026-MM`: 월별 보관 자료에 공통 수집기의 오늘 자료를 합쳐 제공합니다. `/standings`는 메인과 동일한 `GET /kbo-api`에서 팀·개인 순위를 읽습니다.
+8. `lib/kbo/details-collector.ts`: 10개 구단의 상세 탭과 여기서 발견한 선수 전원의 상세를 한 번 수집하고, 경기 결과·순위 확인이 끝난 뒤 다시 갱신합니다.
+9. `.cache/kbo/details.json`: 팀 상세, 선수 프로필, 시즌 기록 카드·그래프, 통산 기록을 저장합니다. 중단되면 같은 수집 세대에서 빠진 항목만 이어받습니다.
+10. `GET /kbo-api/details/teams/[code]`, `GET /kbo-api/details/athletes/[code]`: 저장한 구단·선수 상세를 제공합니다. `GET /kbo-api/details/status`는 전체 수집 진행률을 제공합니다.
 
 브라우저의 API 조회나 재시도 버튼이 티빙 수집 주기를 강제로 앞당기지는 않습니다. 서버가 내려받은 결과를 방문자들이 함께 사용합니다. `fetchedAt`은 마지막 수집 성공 시각이고, `updatedAt`은 경기·순위 내용이 마지막으로 달라진 시각입니다. 티빙이 원본 게시 시각을 제공하지 않아 `sourceUpdatedAt`은 `null`이며 화면에는 `마지막 확인`으로 표시합니다.
+
+## 팀·선수 상세와 안쪽 탭
+
+팀 상세의 첫 응답만 저장하지 않습니다. 팀 내 순위의 **투수·타자**, 선수단의 **투수·내야수·외야수·포수** 응답을 모두 따로 확인해 합칩니다. 구단 시즌 기록, 다음 일정, 팀 내 기록별 상위 선수, 포지션별 전체 선수단, 타 구단 바로가기를 표시합니다.
+
+포지션별 선수단과 팀 내 순위에서 나온 고유 선수 코드를 모아 선수 상세를 수집합니다. 선수 프로필, 시즌 기록 카드, 카드를 눌렀을 때 표시할 모든 그래프 점, 통산 기록의 전체 열과 연도별 행을 보존합니다. 아직 출전 기록이 없는 선수는 티빙이 프로필만 주므로 정상 수집으로 인정하고 기록 영역을 빈 상태로 표시합니다. 티빙 응답의 최신 영상·선수 영상 밴드와 재생 정보는 파싱하거나 저장하지 않습니다.
+
+첫 전체 수집은 구단 10개와 발견된 선수 전원을 저장합니다. 이번 실제 수집에서는 10개 구단과 고유 선수 556명이 완료됐습니다. 이후에는 당일 모든 경기 결과가 저장되고 마지막 순위 확인까지 끝난 수집 세대를 기준으로 전체 상세를 갱신하며, 기록 변화가 없는 날에도 24시간 안전 점검을 수행합니다. 선수 요청은 최대 4개를 동시에 처리하고 40명 단위로 원자 저장하여 소스 부하와 디스크 쓰기를 제한합니다.
 
 일정 페이지는 우리 캐시만 조회합니다. 첫 보관 진행 중에는 3초, 보관 완료 후에는 60초 간격으로 조회하며 이 조회 횟수만큼 티빙을 다시 수집하지 않습니다. 월 변경 시 이전 응답을 취소하고 선택한 월의 결과만 보여줍니다.
 
@@ -57,11 +68,17 @@
 
 - `https://gw.tving.com/bff/sports/v2/kbo/schedule?date=YYYYMMDD`
 - `https://gw.tving.com/bff/sports/v2/kbo/history/team?yearSeason=YYYY&gameSeason=0`
+- `https://gw.tving.com/bff/sports/v2/kbo/history/athlete/ranking?yearSeason=YYYY&gameSeason=regular&athleteType=pitcher&pitcherRankOrder=earnedRunAverage&screenCode=CSSD0100&osCode=CSOD0900`
+- `https://gw.tving.com/bff/sports/v2/kbo/history/athlete/ranking?yearSeason=YYYY&gameSeason=regular&athleteType=hitter&hitterRankOrder=battingAverage&screenCode=CSSD0100&osCode=CSOD0900`
 - `https://gw.tving.com/bff/sports/v2/kbo/schedule/day?date=YYYYMM`
+- `https://gw.tving.com/bff/sports/v2/team?code=TEAM&sportsType=kbo`
+- `https://gw.tving.com/bff/sports/v2/kbo/history/athlete/top5?teamCode=TEAM&athleteType=pitcher|hitter`
+- `https://gw.tving.com/bff/sports/v2/roaster/item?sportsType=kbo&code=TEAM&position=pitcher|infielder|outfielder|catcher`
+- `https://gw.tving.com/bff/sports/v2/athlete?code=PLAYER&sportsType=kbo`
 
 무경기일 요청에 다음 경기일이 반환되는 경우가 실제 확인되어, 요청 날짜와 `focusDate`를 비교합니다. 불일치하거나 빈 일정의 근거가 없으면 월별 달력으로 해당 날짜의 무경기를 확인해야 빈 목록으로 처리합니다. 초기 수집부터 소스가 정상 형식으로 특정 경기 전체를 누락하는 문제까지는 독립적으로 보증할 수 없습니다.
 
-요청별 15초 제한과 응답 크기 검사를 적용합니다. 오류 시 공개 API 응답에 원본 오류·본문을 노출하지 않습니다. 결과 파일의 원자 교체, Windows 파일 점유 재시도, 수집 중복 방지 잠금을 사용합니다. 기존 선발 필드가 없던 캐시는 한 번 다시 수집하여 새 필드를 채웁니다.
+요청별 15초 제한과 응답 크기 검사를 적용합니다. 오류 시 공개 API 응답에 원본 오류·본문을 노출하지 않습니다. 결과 파일의 원자 교체, Windows 파일 점유 재시도, 수집 중복 방지 잠금을 사용합니다. 기존 선발 필드나 개인 순위가 없던 캐시는 한 번 다시 수집하여 새 필드를 채웁니다.
 
 ## 저장·배포와 인계
 

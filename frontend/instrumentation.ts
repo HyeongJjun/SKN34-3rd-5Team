@@ -4,5 +4,7 @@ export async function register() {
     startKboCollector();
     const { startKboArchive } = await import("./lib/kbo/archive");
     startKboArchive();
+    const { startKboDetailsCollector } = await import("./lib/kbo/details-collector");
+    startKboDetailsCollector();
   }
 }

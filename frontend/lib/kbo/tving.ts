@@ -1,4 +1,7 @@
-import type { KboGame, KboGameStatus, KboSourceData, KboStanding } from "./types";
+import type {
+  KboAthleteRankingBase, KboGame, KboGameStatus, KboHitterRanking,
+  KboIndividualRankings, KboPitcherRanking, KboSourceData, KboStanding,
+} from "./types";
 
 // These are the public statistics requests used by TVING's KBO schedule and
 // ranking pages. No member cookie, playback endpoint, or API credential is used.
@@ -48,6 +51,40 @@ function decimal(value: unknown, field: string, max?: number): string {
   if (!/^\d+(?:\.\d+)?$/.test(result) || !Number.isFinite(Number(result))) fail(field);
   if (max !== undefined && Number(result) > max) fail(field);
   return result;
+}
+
+function safeText(value: unknown, field: string, maxLength = 60): string {
+  const result = string(value, field);
+  if (result.length > maxLength || /[\p{Cc}\p{Cf}<>]/u.test(result)) fail(field);
+  return result;
+}
+
+function statistic(value: unknown, field: string): string {
+  const result = string(value, field);
+  if (result.length > 24 || !/^-?\d+(?:\.\d+)?$/.test(result) || !Number.isFinite(Number(result))) fail(field);
+  return result;
+}
+
+function innings(value: unknown): string {
+  const result = string(value, "이닝");
+  if (!/^\d+(?: [12]\/3)?$/.test(result)) fail("이닝");
+  return result;
+}
+
+function athleteBase(item: JsonObject): KboAthleteRankingBase {
+  const player = safeText(item.name, "선수 이름");
+  const playerCode = safeText(item.code, "선수 코드", 40);
+  const teamName = safeText(item.teamName, "선수 소속팀", 20);
+  const teamCode = Object.keys(TEAM_NAMES).find(code => TEAM_NAMES[code] === teamName);
+  const rank = integer(item.rank, "개인 순위");
+  if (!teamCode || rank < 1 || rank > 500) fail("선수 순위 정보");
+  return { rank, playerCode, player, teamCode, team: teamName };
+}
+
+function athleteItems(payload: unknown, label: string): JsonObject[] {
+  const items = successData(payload).items;
+  if (!Array.isArray(items) || items.length < 1 || items.length > 500) fail(`${label} 개인 순위 목록`);
+  return items.map(value => object(value, `${label} 개인 순위`));
 }
 
 function compactDate(date: string): string {
@@ -193,6 +230,63 @@ export function parseTvingStandings(payload: unknown, date: string): KboStanding
   return rows.sort((a, b) => a.rank - b.rank);
 }
 
+export function parseTvingPitcherRankings(payload: unknown): KboPitcherRanking[] {
+  const rows = athleteItems(payload, "투수").map((item): KboPitcherRanking => ({
+    ...athleteBase(item),
+    earnedRunAverage: statistic(item.earnedRunAverage, "평균자책"),
+    fip: statistic(item.fip, "FIP"),
+    whip: statistic(item.whip, "WHIP"),
+    war: statistic(item.war, "투수 WAR"),
+    qualityStarts: statistic(item.qs, "QS"),
+    games: statistic(item.games, "투수 경기"),
+    wins: statistic(item.wins, "승"),
+    losses: statistic(item.losses, "패"),
+    saves: statistic(item.save, "세이브"),
+    holds: statistic(item.hold, "홀드"),
+    innings: innings(item.inning),
+    strikeouts: statistic(item.strikeOut, "탈삼진"),
+    hitsAllowed: statistic(item.hit, "피안타"),
+    homeRunsAllowed: statistic(item.homeRun, "피홈런"),
+    walks: statistic(item.baseOnBalls, "볼넷"),
+    hitByPitch: statistic(item.hitByPitch, "사구"),
+    wildPitches: statistic(item.wildPitch, "폭투"),
+    runsAllowed: statistic(item.run, "실점"),
+    winningPercentage: statistic(item.winningPercentage, "투수 승률"),
+  }));
+  if (new Set(rows.map(row => row.playerCode)).size !== rows.length) fail("중복된 투수 코드");
+  return rows.sort((a, b) => a.rank - b.rank);
+}
+
+export function parseTvingHitterRankings(payload: unknown): KboHitterRanking[] {
+  const rows = athleteItems(payload, "타자").map((item): KboHitterRanking => ({
+    ...athleteBase(item),
+    battingAverage: statistic(item.battingAverage, "타율"),
+    ops: statistic(item.ops, "OPS"),
+    wrcPlus: statistic(item.wrcPlus, "wRC+"),
+    war: statistic(item.war, "타자 WAR"),
+    games: statistic(item.games, "타자 경기"),
+    atBats: statistic(item.atBat, "타수"),
+    hits: statistic(item.hit, "안타"),
+    doubles: statistic(item.doubles, "2루타"),
+    triples: statistic(item.triples, "3루타"),
+    homeRuns: statistic(item.homeRun, "홈런"),
+    runsBattedIn: statistic(item.runBattedIn, "타점"),
+    runs: statistic(item.run, "득점"),
+    stolenBases: statistic(item.stolenBase, "도루"),
+    walks: statistic(item.baseOnBalls, "볼넷"),
+    strikeouts: statistic(item.strikeOut, "삼진"),
+    doublePlays: statistic(item.doublePlay, "병살"),
+    onBasePercentage: statistic(item.onBasePercentage, "출루율"),
+    sluggingPercentage: statistic(item.sluggingPercentage, "장타율"),
+  }));
+  if (new Set(rows.map(row => row.playerCode)).size !== rows.length) fail("중복된 타자 코드");
+  return rows.sort((a, b) => a.rank - b.rank);
+}
+
+export function parseTvingIndividualRankings(pitchers: unknown, hitters: unknown): KboIndividualRankings {
+  return { pitchers: parseTvingPitcherRankings(pitchers), hitters: parseTvingHitterRankings(hitters) };
+}
+
 async function fetchJson(url: string): Promise<unknown> {
   const response = await fetch(url, {
     cache: "no-store",
@@ -230,14 +324,22 @@ export async function fetchTvingScheduleDay(date: string): Promise<KboGame[]> {
 
 export async function fetchTvingKbo(date: string): Promise<KboSourceData> {
   const compact = compactDate(date);
-  const [games, standings] = await Promise.all([
+  const year = compact.slice(0, 4);
+  const athleteUrl = (type: "pitcher" | "hitter") => {
+    const order = type === "pitcher" ? "pitcherRankOrder=earnedRunAverage" : "hitterRankOrder=battingAverage";
+    return `${BASE_URL}/history/athlete/ranking?yearSeason=${year}&gameSeason=regular&athleteType=${type}&${order}&screenCode=CSSD0100&osCode=CSOD0900`;
+  };
+  const [games, standings, pitchers, hitters] = await Promise.all([
     fetchTvingScheduleDay(date),
-    fetchJson(`${BASE_URL}/history/team?yearSeason=${compact.slice(0, 4)}&gameSeason=0`),
+    fetchJson(`${BASE_URL}/history/team?yearSeason=${year}&gameSeason=0`),
+    fetchJson(athleteUrl("pitcher")),
+    fetchJson(athleteUrl("hitter")),
   ]);
   return {
     date,
     games,
     standings: parseTvingStandings(standings, date),
+    individualRankings: parseTvingIndividualRankings(pitchers, hitters),
     // The public feed has no source publication timestamp. HTTP Date or RSC
     // hydration times would only say when the response was served, not updated.
     sourceUpdatedAt: null,

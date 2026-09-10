@@ -6,8 +6,8 @@ export function RouteBoardSkeleton() {
   return <div className="community-loading-table" aria-hidden="true"><div className="community-loading-head"/>{Array.from({ length: 6 }, (_, index) => <div className="community-loading-row" key={index}><div><div className="route-skeleton route-skeleton-badge"/><div className="route-skeleton route-skeleton-title"/></div><div className="route-skeleton"/><div className="route-skeleton"/></div>)}</div>;
 }
 
-export function RouteCardsSkeleton() {
-  return <div className="route-card-grid" aria-hidden="true">{Array.from({ length: 6 }, (_, index) => <div className="route-card route-card-skeleton" key={index}><div className="route-skeleton route-card-image"/><div className="route-card-content"><div className="route-skeleton route-skeleton-badge"/><div className="route-skeleton route-skeleton-title"/><div className="route-skeleton route-skeleton-line"/><div className="route-skeleton route-skeleton-line is-short"/><div className="route-skeleton route-skeleton-footer"/></div></div>)}</div>;
+export function RouteCardsSkeleton({ count = 6, className = "route-card-grid" }: { count?: number; className?: string } = {}) {
+  return <div className={className} aria-hidden="true">{Array.from({ length: count }, (_, index) => <div className="route-card route-card-skeleton" key={index}><div className="route-skeleton route-card-image"/><div className="route-card-content"><div className="route-skeleton route-skeleton-badge"/><div className="route-skeleton route-skeleton-title"/><div className="route-skeleton route-skeleton-line"/><div className="route-skeleton route-skeleton-line is-short"/><div className="route-skeleton route-skeleton-footer"/></div></div>)}</div>;
 }
 
 export function RouteDetailSkeleton() {

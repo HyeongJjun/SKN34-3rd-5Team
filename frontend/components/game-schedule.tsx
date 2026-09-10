@@ -1,33 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KboApiResponse, KboGame, KboSnapshot, KboStanding } from "@/lib/kbo/types";
 import { Icon } from "./icons";
-
-type TeamTheme = { mark: string; color: string; background: string };
-
-const teamThemes: Record<string, TeamTheme> = {
-  두산: { mark: "DS", color: "#263452", background: "#edf0f6" },
-  LG: { mark: "LG", color: "#af2754", background: "#fff0f5" },
-  키움: { mark: "KW", color: "#8d2e51", background: "#faf0f5" },
-  SSG: { mark: "SSG", color: "#ba343c", background: "#fff1f1" },
-  삼성: { mark: "SS", color: "#2861bc", background: "#edf4ff" },
-  KT: { mark: "KT", color: "#333c4d", background: "#eff1f5" },
-  KIA: { mark: "KIA", color: "#bd3446", background: "#fff0f2" },
-  한화: { mark: "H", color: "#c76b23", background: "#fff5e9" },
-  NC: { mark: "NC", color: "#34567e", background: "#edf3fa" },
-  롯데: { mark: "LT", color: "#305b87", background: "#edf4fc" },
-};
-
-function getTeamTheme(name: string) {
-  return Object.entries(teamThemes).find(([team]) => name.toUpperCase().includes(team))?.[1]
-    ?? { mark: name.slice(0, 2), color: "#375582", background: "#edf3ff" };
-}
-
-function teamStyle(name: string): CSSProperties {
-  const theme = getTeamTheme(name);
-  return { "--team-color": theme.color, "--team-background": theme.background } as CSSProperties;
-}
+import { TeamLogo } from "./team-logo";
+import { HomeTeamBoards } from "./home-team-boards";
+import { KboHighlightSection } from "./kbo-highlight";
 
 function formatDay(date: string, full = false) {
   const value = new Date(`${date}T12:00:00+09:00`);
@@ -124,7 +102,7 @@ function useKboSnapshot() {
 function TeamBadge({ team, side }: { team: KboGame["home"]; side: "원정" | "홈" }) {
   return (
     <div className="game-team">
-      <span className="team-mark" aria-hidden="true" style={teamStyle(team.name)}>{getTeamTheme(team.name).mark}</span>
+      <TeamLogo code={team.code} name={team.name} className="team-mark" />
       <strong>{team.name}</strong>
       <span className="game-starting-pitcher"><span>선발</span> {team.startingPitcher?.trim() || "미정"}</span>
       <small>{side}</small>
@@ -204,7 +182,11 @@ function GameCarousel({ games }: { games: KboGame[] }) {
                 <article className={`game-card game-card-${game.status}`} aria-labelledby={`game-${game.id}-title`}>
                   <div className="game-card-top">
                     <time className="game-date" dateTime={game.startsAt ?? game.date}>
-                      <span>{formatDay(game.date)}</span><strong>{game.time || "시간 미정"}</strong>
+                      <span className="game-date-line">
+                        <span>{formatDay(game.date)}</span>
+                        <span className="game-venue"><Icon name="pin" size={16} />{game.stadium || "구장 확인 중"}</span>
+                      </span>
+                      <strong>{game.time || "시간 미정"}</strong>
                     </time>
                     <span className={`game-status game-status-${game.status}`}>{game.statusLabel}</span>
                   </div>
@@ -221,7 +203,6 @@ function GameCarousel({ games }: { games: KboGame[] }) {
                       <strong className={game.status === "final" && game.home.score! > game.away.score! ? "game-score-winner" : undefined}>{game.home.score}</strong>
                     </div>
                   )}
-                  <div className="game-venue"><Icon name="pin" size={16} /><span>{game.stadium || "구장 확인 중"}</span></div>
                   <div className="game-card-footer"><span>KBO 정규시즌</span></div>
                 </article>
               </li>
@@ -267,7 +248,7 @@ function StandingsTable({ standings }: { standings: KboStanding[] }) {
           <tbody>{standings.map(team => (
             <tr key={team.teamCode} className={team.rank === 1 ? "standings-leader" : undefined}>
               <td><span className="standings-rank">{team.rank}</span></td>
-              <th scope="row"><span className="standings-team"><span className="standings-team-mark" aria-hidden="true" style={teamStyle(team.team)}>{getTeamTheme(team.team).mark}</span>{team.team}</span></th>
+              <th scope="row"><span className="standings-team"><TeamLogo code={team.teamCode} name={team.team} className="standings-team-mark" />{team.team}</span></th>
               <td>{team.played}</td><td>{team.wins}</td><td>{team.draws}</td><td>{team.losses}</td>
               <td className="standings-win-rate">{team.winRate || "—"}</td><td>{team.gamesBehind || "—"}</td>
               <td><span className={team.streak.includes("승") ? "standings-streak-win" : undefined}>{team.streak || "—"}</span></td>
@@ -320,6 +301,8 @@ export function GameSchedule() {
         {data && <SourceMeta data={data} />}
       </section>
 
+      <KboHighlightSection />
+
       <section className="container home-standings" aria-labelledby="standings-heading">
         <div className="section-heading">
           <div><span className="eyebrow">TEAM STANDINGS</span><h2 id="standings-heading">KBO 순위표</h2><p>우리 팀은 지금 어디쯤 있을까요?</p></div>
@@ -337,6 +320,7 @@ export function GameSchedule() {
           <SourceMeta data={data} />
         </div>}
       </section>
+      <HomeTeamBoards standings={data?.standings ?? null} loading={loading} retry={retry} />
     </>
   );
 }

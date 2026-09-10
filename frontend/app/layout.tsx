@@ -4,6 +4,7 @@ import "./globals.css";
 import "@/styles/navigation.css";
 import "@/styles/home.css";
 import "@/styles/schedule.css";
+import "@/styles/youtube-highlight.css";
 import "@/styles/routes.css";
 import "@/styles/community.css";
 import "@/styles/writer.css";

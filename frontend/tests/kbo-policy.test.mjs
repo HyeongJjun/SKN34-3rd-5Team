@@ -42,7 +42,13 @@ function game(overrides = {}) {
 function finalGame(overrides = {}) {
   return game({ status: "final", statusLabel: "경기 종료", away: { code: "AA", name: "테스트 AA", score: 3, startingPitcher: null }, home: { code: "BB", name: "테스트 BB", score: 4, startingPitcher: null }, ...overrides });
 }
-function data(games = [], overrides = {}) { return { date: DATE, games, standings: standings(), sourceUpdatedAt: null, ...overrides }; }
+function individualRankings() {
+  return {
+    pitchers: [{ rank: 1, playerCode: "pitcher-1", player: "테스트 투수", teamCode: "AA", team: "테스트 구단 AA" }],
+    hitters: [{ rank: 1, playerCode: "hitter-1", player: "테스트 타자", teamCode: "BB", team: "테스트 구단 BB" }],
+  };
+}
+function data(games = [], overrides = {}) { return { date: DATE, games, standings: standings(), individualRankings: individualRankings(), sourceUpdatedAt: null, ...overrides }; }
 function save(previous, source, now = clock()) { return recordSuccessfulCollection(previous, source, source.date, now); }
 function expectedAfter(now, duration) { return iso(now.getTime() + duration); }
 function playedAfter(source, additions) { return { ...source, standings: source.standings.map(team => ({ ...team, played: team.played + (additions[team.teamCode] ?? 0) })) }; }
@@ -508,12 +514,14 @@ test("a stored snapshot is returned while a due provider request remains pending
   assert.equal((await storeApi.readKboStore(directory)).days[DATE].data.games[0].status, "live");
 });
 
-test("old cache pitcher fields migrate once without bypassing the next scheduled check again", async () => {
+test("old cache pitcher fields and missing individual rankings migrate once without bypassing the next scheduled check again", async () => {
   const directory = tempStore();
   const fixture = game();
   delete fixture.away.startingPitcher;
   delete fixture.home.startingPitcher;
-  const original = save(null, data([fixture]), clock());
+  const oldData = data([fixture]);
+  delete oldData.individualRankings;
+  const original = save(null, oldData, clock());
   await storeApi.writeKboStore(diskStore(original), directory);
   const harness = collectorHarness({ directory, fetcher: async () => data([game()]) });
   await harness.api.tickKboCollection();
@@ -521,6 +529,8 @@ test("old cache pitcher fields migrate once without bypassing the next scheduled
   const stored = (await storeApi.readKboStore(directory)).days[DATE];
   assert.equal(stored.data.games[0].away.startingPitcher, null);
   assert.equal(stored.data.games[0].home.startingPitcher, null);
+  assert.equal(stored.data.individualRankings.pitchers.length, 1);
+  assert.equal(stored.data.individualRankings.hitters.length, 1);
   await harness.api.tickKboCollection();
   assert.equal(harness.calls.fetch.length, 1);
 });

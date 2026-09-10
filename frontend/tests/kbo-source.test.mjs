@@ -15,13 +15,45 @@ const { outputText } = ts.transpileModule(readFileSync(join(frontend, "lib/kbo/t
 });
 writeFileSync(join(scratch, "tving.cjs"), outputText);
 const requireTestModule = createRequire(join(scratch, "entry.cjs"));
-const { parseTvingCalendar, parseTvingSchedule, parseTvingStandings, fetchTvingCalendar, fetchTvingScheduleDay, fetchTvingKbo } = requireTestModule("./tving.cjs");
+const {
+  parseTvingCalendar, parseTvingSchedule, parseTvingStandings,
+  parseTvingPitcherRankings, parseTvingHitterRankings,
+  fetchTvingCalendar, fetchTvingScheduleDay, fetchTvingKbo,
+} = requireTestModule("./tving.cjs");
 // Trimmed public statistics captured on 2026-09-09; no cookies or credentials.
 const fixture = (name) => JSON.parse(readFileSync(join(frontend, "tests/fixtures", name), "utf8"));
 const today = () => fixture("tving-schedule-20260909.json");
 const ended = () => fixture("tving-schedule-20260908.json");
 const standings = () => fixture("tving-standings-2026.json");
 const scheduleBand = (payload) => payload.data.bands[0];
+const pitchers = () => ({ code: "0000", data: { items: [
+  {
+    rank: 1, name: "원태인", code: "pitcher-1", teamName: "삼성", earnedRunAverage: "2.41",
+    fip: "3.18", whip: "1.09", war: "5.12", qs: "19", games: "25", wins: "14", losses: "5",
+    save: "0", hold: "0", inning: "149 1/3", strikeOut: "142", hit: "128", homeRun: "9",
+    baseOnBalls: "34", hitByPitch: "5", wildPitch: "2", run: "45", winningPercentage: "0.737",
+  },
+  {
+    rank: 2, name: "류현진", code: "pitcher-2", teamName: "한화", earnedRunAverage: "2.65",
+    fip: "3.04", whip: "1.12", war: "4.80", qs: "17", games: "24", wins: "12", losses: "6",
+    save: "0", hold: "0", inning: "139 2/3", strikeOut: "135", hit: "121", homeRun: "10",
+    baseOnBalls: "35", hitByPitch: "3", wildPitch: "1", run: "48", winningPercentage: "0.667",
+  },
+] } });
+const hitters = () => ({ code: "0000", data: { items: [
+  {
+    rank: 1, name: "구자욱", code: "hitter-1", teamName: "삼성", battingAverage: "0.362", ops: "1.021",
+    wrcPlus: "181.4", war: "6.44", games: "121", atBat: "469", hit: "170", doubles: "34", triples: "3",
+    homeRun: "25", runBattedIn: "91", run: "88", stolenBase: "12", baseOnBalls: "61", strikeOut: "72",
+    doublePlay: "8", onBasePercentage: "0.431", sluggingPercentage: "0.590",
+  },
+  {
+    rank: 2, name: "문현빈", code: "hitter-2", teamName: "한화", battingAverage: "0.351", ops: "0.934",
+    wrcPlus: "157.2", war: "5.11", games: "120", atBat: "475", hit: "167", doubles: "29", triples: "5",
+    homeRun: "17", runBattedIn: "79", run: "83", stolenBase: "14", baseOnBalls: "49", strikeOut: "69",
+    doublePlay: "9", onBasePercentage: "0.410", sluggingPercentage: "0.524",
+  },
+] } });
 
 test("public daily schedule preserves all four actual games, KST, and hides placeholder zero scores", () => {
   const games = parseTvingSchedule(today(), "2026-09-09");
@@ -162,6 +194,39 @@ test("wrong season, duplicate/missing teams and partial standing totals are reje
   assert.equal(parseTvingStandings(payload, "2026-09-09")[1].rank, 1);
 });
 
+test("pitcher and hitter rankings preserve the full public record fields and team identity", () => {
+  const pitcherRows = parseTvingPitcherRankings(pitchers());
+  assert.equal(pitcherRows.length, 2);
+  assert.deepEqual(pitcherRows[0], {
+    rank: 1, playerCode: "pitcher-1", player: "원태인", teamCode: "SS", team: "삼성",
+    earnedRunAverage: "2.41", fip: "3.18", whip: "1.09", war: "5.12", qualityStarts: "19",
+    games: "25", wins: "14", losses: "5", saves: "0", holds: "0", innings: "149 1/3",
+    strikeouts: "142", hitsAllowed: "128", homeRunsAllowed: "9", walks: "34", hitByPitch: "5",
+    wildPitches: "2", runsAllowed: "45", winningPercentage: "0.737",
+  });
+  const hitterRows = parseTvingHitterRankings(hitters());
+  assert.equal(hitterRows.length, 2);
+  assert.equal(hitterRows[0].player, "구자욱");
+  assert.equal(hitterRows[0].teamCode, "SS");
+  assert.equal(hitterRows[0].battingAverage, "0.362");
+  assert.equal(hitterRows[0].sluggingPercentage, "0.590");
+});
+
+test("partial, duplicate, unknown-team and malformed individual ranking rows are rejected", () => {
+  for (const mutate of [
+    (p) => { p.data.items = []; },
+    (p) => { p.data.items[1] = p.data.items[0]; },
+    (p) => { p.data.items[0].teamName = "알 수 없는 팀"; },
+    (p) => { delete p.data.items[0].earnedRunAverage; },
+    (p) => { p.data.items[0].inning = "149 3/3"; },
+  ]) {
+    const payload = pitchers(); mutate(payload);
+    assert.throws(() => parseTvingPitcherRankings(payload));
+  }
+  const hitterPayload = hitters(); hitterPayload.data.items[0].battingAverage = "<script>";
+  assert.throws(() => parseTvingHitterRankings(hitterPayload));
+});
+
 test("fetch uses only public date/season URLs and confirms a redirected off-day with a calendar", async (t) => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (url, init) => {
@@ -169,19 +234,24 @@ test("fetch uses only public date/season URLs and confirms a redirected off-day 
     assert.equal(init.cache, "no-store");
     assert.equal(init.headers.Authorization, undefined);
     const payload = String(url).includes("history/team") ? standings()
-      : String(url).includes("schedule/day") ? { code: "0000", data: { calendar: scheduleBand(ended()).calendar } }
-        : ended();
+      : String(url).includes("athleteType=pitcher") ? pitchers()
+        : String(url).includes("athleteType=hitter") ? hitters()
+          : String(url).includes("schedule/day") ? { code: "0000", data: { calendar: scheduleBand(ended()).calendar } }
+            : ended();
     return new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } });
   });
   const result = await fetchTvingKbo("2026-09-07");
   assert.equal(result.games.length, 0);
   assert.equal(result.standings.length, 10);
+  assert.equal(result.individualRankings.pitchers.length, 2);
+  assert.equal(result.individualRankings.hitters.length, 2);
   assert.equal(result.sourceUpdatedAt, null);
-  assert.deepEqual(calls, [
-    "https://gw.tving.com/bff/sports/v2/kbo/schedule?date=20260907",
-    "https://gw.tving.com/bff/sports/v2/kbo/history/team?yearSeason=2026&gameSeason=0",
-    "https://gw.tving.com/bff/sports/v2/kbo/schedule/day?date=202609",
-  ]);
+  assert.equal(calls.length, 5);
+  assert.ok(calls.includes("https://gw.tving.com/bff/sports/v2/kbo/schedule?date=20260907"));
+  assert.ok(calls.includes("https://gw.tving.com/bff/sports/v2/kbo/history/team?yearSeason=2026&gameSeason=0"));
+  assert.ok(calls.includes("https://gw.tving.com/bff/sports/v2/kbo/history/athlete/ranking?yearSeason=2026&gameSeason=regular&athleteType=pitcher&pitcherRankOrder=earnedRunAverage&screenCode=CSSD0100&osCode=CSOD0900"));
+  assert.ok(calls.includes("https://gw.tving.com/bff/sports/v2/kbo/history/athlete/ranking?yearSeason=2026&gameSeason=regular&athleteType=hitter&hitterRankOrder=battingAverage&screenCode=CSSD0100&osCode=CSOD0900"));
+  assert.ok(calls.includes("https://gw.tving.com/bff/sports/v2/kbo/schedule/day?date=202609"));
 });
 
 test("fetch confirms an empty same-date response with a separate calendar when its calendar is missing", async (t) => {
@@ -192,13 +262,15 @@ test("fetch confirms an empty same-date response with a separate calendar when i
   t.mock.method(globalThis, "fetch", async (url) => {
     calls.push(String(url));
     const data = String(url).includes("history/team") ? standings()
-      : String(url).includes("schedule/day") ? { code: "0000", data: { calendar: [8, 10] } }
-        : payload;
+      : String(url).includes("athleteType=pitcher") ? pitchers()
+        : String(url).includes("athleteType=hitter") ? hitters()
+          : String(url).includes("schedule/day") ? { code: "0000", data: { calendar: [8, 10] } }
+            : payload;
     return new Response(JSON.stringify(data), { headers: { "content-type": "application/json" } });
   });
   assert.deepEqual((await fetchTvingKbo("2026-09-09")).games, []);
-  assert.equal(calls.length, 3);
-  assert.ok(calls[2].endsWith("schedule/day?date=202609"));
+  assert.equal(calls.length, 5);
+  assert.ok(calls.some(url => url.endsWith("schedule/day?date=202609")));
 });
 
 test("HTTP errors and non-JSON responses are rejected without including source bodies", async (t) => {

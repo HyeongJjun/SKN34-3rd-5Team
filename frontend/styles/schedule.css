@@ -146,10 +146,17 @@
   gap: 2px;
 }
 
-.game-date span {
+.game-date-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.game-date-line > span:first-child {
   color: #657790;
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .game-date strong {
@@ -206,22 +213,22 @@
 .team-mark {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  margin-bottom: 9px;
+  width: 68px;
+  height: 68px;
+  margin-bottom: 11px;
   border: 1px solid #152a4906;
-  border-radius: 17px;
+  border-radius: 21px;
   background: var(--team-background, #edf3ff);
   color: var(--team-color, #2356a6);
   font-family: Arial, sans-serif;
-  font-size: 22px;
+  font-size: 29px;
   font-weight: 800;
   letter-spacing: -.08em;
 }
 
 .game-team strong {
   color: #26344b;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 700;
   line-height: 1.5;
   word-break: keep-all;
@@ -230,14 +237,14 @@
 .game-team small {
   margin-top: 3px;
   color: #9ba7b8;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .game-starting-pitcher {
   max-width: 100%;
   margin-top: 5px;
   color: #627794;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.6;
   word-break: keep-all;
 }
@@ -245,11 +252,11 @@
 .game-starting-pitcher > span {
   margin-right: 2px;
   color: #95a1b3;
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .game-versus {
-  padding-top: 16px;
+  padding-top: 25px;
   color: #afbacb;
   font-family: Arial, sans-serif;
   font-size: 11px;
@@ -282,16 +289,14 @@
 }
 
 .game-venue {
-  display: flex;
-  justify-content: center;
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 45px;
-  margin-top: 11px;
+  gap: 4px;
   color: #78869b;
   font-size: 11px;
-  text-align: center;
+  font-weight: 500;
   word-break: keep-all;
+  white-space: nowrap;
 }
 
 .game-venue svg {
@@ -380,16 +385,16 @@
   }
 
   .game-card {
-    min-height: 306px;
+    min-height: 332px;
     padding-inline: 21px;
   }
 
   .game-team strong {
-    font-size: 12px;
+    font-size: 17px;
   }
 
   .game-starting-pitcher {
-    font-size: 10px;
+    font-size: 14px;
   }
 
   .schedule-bottom {

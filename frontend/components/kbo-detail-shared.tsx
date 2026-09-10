@@ -1,28 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "./icons";
+import { TeamLogo } from "./team-logo";
 
 export const kboTeams = [
-  { code: "SS", name: "삼성", mark: "SS", color: "#2861bc", background: "#edf4ff" },
-  { code: "KT", name: "KT", mark: "KT", color: "#333c4d", background: "#eff1f5" },
-  { code: "LG", name: "LG", mark: "LG", color: "#af2754", background: "#fff0f5" },
-  { code: "HT", name: "KIA", mark: "KIA", color: "#bd3446", background: "#fff0f2" },
-  { code: "OB", name: "두산", mark: "DS", color: "#263452", background: "#edf0f6" },
-  { code: "NC", name: "NC", mark: "NC", color: "#34567e", background: "#edf3fa" },
-  { code: "HH", name: "한화", mark: "H", color: "#c76b23", background: "#fff5e9" },
-  { code: "LT", name: "롯데", mark: "LT", color: "#305b87", background: "#edf4fc" },
-  { code: "SK", name: "SSG", mark: "SSG", color: "#ba343c", background: "#fff1f1" },
-  { code: "WO", name: "키움", mark: "KW", color: "#8d2e51", background: "#faf0f5" },
+  { code: "SS", name: "삼성" },
+  { code: "KT", name: "KT" },
+  { code: "LG", name: "LG" },
+  { code: "HT", name: "KIA" },
+  { code: "OB", name: "두산" },
+  { code: "NC", name: "NC" },
+  { code: "HH", name: "한화" },
+  { code: "LT", name: "롯데" },
+  { code: "SK", name: "SSG" },
+  { code: "WO", name: "키움" },
 ] as const;
 
 export function DetailTeamMark({ code, name }: { code: string; name: string }) {
-  const team = kboTeams.find(item => item.code === code);
-  return <span className="kbo-detail-team-mark" aria-hidden="true"
-    style={{ "--kbo-team-color": team?.color ?? "#375582", "--kbo-team-background": team?.background ?? "#edf3ff" } as CSSProperties}>
-    {team?.mark ?? name.slice(0, 2)}
-  </span>;
+  return <TeamLogo code={code} name={name} className="kbo-detail-team-mark" />;
 }
 
 export function koreaToday() {
@@ -111,17 +108,23 @@ export function useKboResource<T>(url: string, pollMs: number | ((data: T | null
   };
 }
 
-export function KboDetailHeading({ active }: { active: "schedule" | "standings" }) {
+export function KboDetailHeading({ active }: { active: "schedule" | "standings" | "highlights" }) {
+  const copy = {
+    schedule: { eyebrow: "EVERY GAME, EVERY MOMENT", title: "경기 일정", intro: "응원하는 팀의 다음 경기부터, 지난 경기의 결과까지." },
+    standings: { eyebrow: "THE SEASON AT A GLANCE", title: "순위·기록", intro: "열 팀이 만들어가는 시즌, 순위와 기록으로 만나보세요." },
+    highlights: { eyebrow: "KBO LEAGUE HIGHLIGHTS", title: "KBO 리그 H/L", intro: "KBO 공식 채널의 최근 경기를 큰 화면으로 다시 만나보세요." },
+  }[active];
   return <>
     <div className="kbo-detail-heading">
       <Link href="/" className="kbo-detail-back"><span aria-hidden="true">←</span> 메인으로</Link>
-      <p className="eyebrow">{active === "schedule" ? "EVERY GAME, EVERY MOMENT" : "THE SEASON AT A GLANCE"}</p>
-      <h1>{active === "schedule" ? "경기 일정" : "순위·기록"}</h1>
-      <p className="kbo-detail-intro">{active === "schedule" ? "응원하는 팀의 다음 경기부터, 지난 경기의 결과까지." : "열 팀이 만들어가는 시즌, 순위와 기록으로 만나보세요."}</p>
+      <p className="eyebrow">{copy.eyebrow}</p>
+      <h1>{copy.title}</h1>
+      <p className="kbo-detail-intro">{copy.intro}</p>
     </div>
     <nav className="kbo-detail-tabs" aria-label="KBO 경기 정보">
       <Link href="/schedule" aria-current={active === "schedule" ? "page" : undefined}>경기 일정</Link>
-      <Link href="/standings" aria-current={active === "standings" ? "page" : undefined}>팀 순위·기록</Link>
+      <Link href="/standings" aria-current={active === "standings" ? "page" : undefined}>순위·기록</Link>
+      <Link href="/highlights" aria-current={active === "highlights" ? "page" : undefined}>KBO 리그 H/L</Link>
     </nav>
   </>;
 }

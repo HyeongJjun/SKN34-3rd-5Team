@@ -28,10 +28,69 @@ export type KboStanding = {
   lastTen: string;
 };
 
+export type KboAthleteRankingBase = {
+  rank: number;
+  playerCode: string;
+  player: string;
+  teamCode: string;
+  team: string;
+};
+
+export type KboPitcherRanking = KboAthleteRankingBase & {
+  earnedRunAverage: string;
+  fip: string;
+  whip: string;
+  war: string;
+  qualityStarts: string;
+  games: string;
+  wins: string;
+  losses: string;
+  saves: string;
+  holds: string;
+  innings: string;
+  strikeouts: string;
+  hitsAllowed: string;
+  homeRunsAllowed: string;
+  walks: string;
+  hitByPitch: string;
+  wildPitches: string;
+  runsAllowed: string;
+  winningPercentage: string;
+};
+
+export type KboHitterRanking = KboAthleteRankingBase & {
+  battingAverage: string;
+  ops: string;
+  wrcPlus: string;
+  war: string;
+  games: string;
+  atBats: string;
+  hits: string;
+  doubles: string;
+  triples: string;
+  homeRuns: string;
+  runsBattedIn: string;
+  runs: string;
+  stolenBases: string;
+  walks: string;
+  strikeouts: string;
+  doublePlays: string;
+  onBasePercentage: string;
+  sluggingPercentage: string;
+};
+
+export type KboIndividualRankings = {
+  pitchers: KboPitcherRanking[];
+  hitters: KboHitterRanking[];
+};
+
 export type KboSourceData = {
   date: string;
   games: KboGame[];
   standings: KboStanding[];
+  // Optional so a cache created by the previous app version remains readable.
+  // The collector immediately refreshes such a cache and fills this field.
+  individualRankings?: KboIndividualRankings;
   sourceUpdatedAt: string | null;
 };
 
