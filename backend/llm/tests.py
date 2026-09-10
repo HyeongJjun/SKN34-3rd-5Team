@@ -7,7 +7,30 @@ from langchain_core.runnables import RunnableLambda
 from openai import OpenAIError
 from rest_framework.test import APITestCase
 
-from .models import ChatMessage, ChatSession
+from .models import ChatMessage, ChatSession, Document, DocumentChunk
+
+
+class DocumentChatCoexistenceTest(APITestCase):
+    def test_chat_deletion_preserves_document_and_embedding(self):
+        from django.urls import resolve
+
+        self.assertEqual(resolve("/admin/").url_name, "index")
+        self.client.force_authenticate(
+            user=get_user_model().objects.create_user(username="coexist")
+        )
+        document = Document.objects.create(title="문서", source="test")
+        chunk = DocumentChunk.objects.create(
+            document=document, content="원문", chunk_index=0, embedding=[1.0] * 1536
+        )
+        session = self.client.post("/chat/sessions/", {"title": "채팅"}, format="json")
+        self.assertEqual(session.status_code, 201)
+        self.assertEqual(
+            self.client.delete(f"/chat/sessions/{session.json()['id']}/").status_code, 204
+        )
+        chunk.refresh_from_db()
+        self.assertEqual(chunk.content, "원문")
+        self.assertEqual(len(chunk.embedding), 1536)
+        self.assertTrue(Document.objects.filter(pk=document.pk).exists())
 
 
 class ChatApiTest(APITestCase):

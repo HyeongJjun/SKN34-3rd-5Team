@@ -2,7 +2,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-    dependencies = [("llm", "0001_initial")]
+    dependencies = [("llm", "0002_chat_models")]
 
     operations = [
         migrations.AddField(
