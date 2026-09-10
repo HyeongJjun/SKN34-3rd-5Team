@@ -4,7 +4,7 @@ RAG 인덱싱: 전처리 CSV/docs → 청크 텍스트 → 임베딩 → Documen
 실행:
   python manage.py build_index --dry-run          # 청크만 만들고 통계·샘플 출력 (임베딩 X)
   python manage.py build_index --limit 50         # 50건만 끝까지 (연결·키 테스트용)
-  python manage.py build_index                    # 전량 (약 2,835청크, 100원 안팎)
+  python manage.py build_index                    # 전량 (약 3,832청크, 100원 안팎)
 
 재현성: 이 파일 하나로 처음부터 다시 만들어짐. 임베딩은 artifacts/ 에 500건마다 체크포인트.
 근거 문서: claude/임베딩_대상파일_정리.md, claude/청킹임베딩_의사결정노트.md
@@ -50,9 +50,11 @@ CHECKPOINT_EVERY = 500
 # ── 파일 → (category, 자연키 컬럼들) ────────────────────────────────────────────
 CSV_SPEC = {
     "구장티켓가격.csv":               ("PRICE",         ["team_code", "zone_code", "day_type", "customer_type", "price_tier"]),
-    "구장먹거리_공식매점.csv":         ("FOOD_IN",       ["record_id"]),
+    # 2026-09-10 팀 결정(B안): 구장 내 먹거리는 자리어때만 임베딩. 구장먹거리_공식매점.csv 는 임베딩 제외(파일은 4차 크롤링 소스로 보존)
+    "구장먹거리_위치_자리어때.csv":     ("FOOD_IN",       ["record_id"]),
     "kbo_ticket_policy_structured.csv": ("TICKET_POLICY", ["id"]),
     "구장편의시설.csv":               ("FACILITY",      ["record_id"]),
+    "구장편의시설_위치_자리어때.csv":   ("FACILITY",      ["record_id"]),   # 굿즈샵·포토부스·물품보관함 — 공식과 유형 안 겹침
     "구장좌석구역.csv":               ("SEAT",          ["stadium_code", "zone_code"]),
     "구장부가콘텐츠_공식.csv":         ("CONTENT",       ["record_id"]),
     "구장교통정보.csv":               ("TRANSPORT",     ["stadium_code", "access_code"]),
@@ -62,6 +64,22 @@ CSV_SPEC = {
     "구장좌석경험.csv":               ("SEAT",          ["stadium_code", "scope_code"]),
 }
 KAKAO_CATEGORY = {"FD6": "FOOD_OUT", "CE7": "CAFE", "AT4": "SPOT"}
+
+# 크롤러 CSV: content 컬럼이 이미 자연어 문장 → row_text 대신 그대로 사용 (2026-09-10 추가)
+# 일정·순위는 원래 SQL 전용이었지만 game_schedule/team_standing 테이블이 아직 없어
+# 직접 질문("삼성 몇 위야", "9/12 잠실 경기 있어")만이라도 답하도록 임베딩에도 넣는다. 상대 날짜 질문은 SQL 라우팅(4차)에서.
+SENTENCE_CSV_SPEC = {
+    "kbo_schedule_full.csv":           ("SCHEDULE", ["id"]),
+    "kbo_standing.csv":                ("STANDING", ["id"]),
+    # kbo_schedule_postseason_tbd(4건)은 참가팀 TBD 플레이스홀더라 제외 (9/10 결정). 순위 확정 후 크롤러가 실제 일정을 쓰면 그때 포함
+}
+# 구장 기본정보(주소·좌표) 9건 — "잠실야구장 주소 알려줘" 용
+STADIUM_CSV = ("stadium_coordinates.csv", "STADIUM", ["stadium_code"])
+
+TEAM_SHORT_KO = {  # 크롤러 CSV의 team 컬럼(한글 약칭) → 코드
+    "LG": "LG", "두산": "DOOSAN", "키움": "KIWOOM", "SSG": "SSG", "KT": "KT",
+    "한화": "HANWHA", "삼성": "SAMSUNG", "KIA": "KIA", "롯데": "LOTTE", "NC": "NC",
+}
 
 TEAM_HOME = {
     "LG": "JAMSIL", "DOOSAN": "JAMSIL", "KIWOOM": "GOCHEOK", "SSG": "MUNHAK", "KT": "SUWON",
@@ -147,7 +165,7 @@ class Command(BaseCommand):
                     sc = TEAM_HOME.get(r.get("team_code"))  # kbo_ticket_policy 에는 stadium_code 없음
                 tc = r.get("team_code") if isinstance(r.get("team_code"), str) else None
                 header = stadium_ko.get(sc, sc or "전 구장")
-                if tc:
+                if tc and "," not in tc:  # 'LG,DOOSAN'(잠실 공동홈)은 구장명만
                     header += f" · {TEAM_KO.get(tc, tc)}"
                 text = row_text(header, r)
                 if str(r.get("status", "")).upper() not in ("CONFIRMED", "CONFIRMED_OFFICIAL", "NAN", ""):
@@ -155,18 +173,42 @@ class Command(BaseCommand):
                 natural = "_".join(str(r.get(c, "")) for c in key_cols)
                 add(fname, category, sc, tc, natural, text, r)
 
-        # 1-2. external_places: in_stadium_flag=Y 제외, 단 DAEGU 14건은 FOOD_IN 으로 포함
+        # 1-1b. 크롤러 CSV 3개: 자연어 content 그대로 (일정 786 + 순위 10)
+        for fname, (category, key_cols) in SENTENCE_CSV_SPEC.items():
+            df = read_csv(fname)
+            for r in df.to_dict("records"):
+                sc = r.get("stadium_code") if isinstance(r.get("stadium_code"), str) else None
+                tc = TEAM_SHORT_KO.get(str(r.get("team", "")).strip())
+                if sc in (None, "", "TBD"):
+                    sc = TEAM_HOME.get(tc) if tc else None      # 순위: 팀 → 홈구장, 포스트시즌 TBD: None
+                header = stadium_ko.get(sc, sc) if sc and sc != "OTHER" else ("포항 특별경기" if sc == "OTHER" else "KBO 리그")
+                if tc:
+                    header += f" · {TEAM_KO.get(tc, tc)}"
+                text = f"[{header}] {str(r.get('content', '')).strip()}"
+                if str(r.get("status_tag", r.get("status", ""))).upper() not in ("CONFIRMED", "NAN", ""):
+                    text += UNCERTAIN_NOTE                            # 포스트시즌 TBD 4건 → OPEN
+                natural = "_".join(str(r.get(c, "")) for c in key_cols)
+                add(fname, category, sc, tc, natural, text, r)
+
+        # 1-1c. 구장 기본정보 9건 (주소·좌표)
+        fname, category, key_cols = STADIUM_CSV
+        for r in read_csv(fname).to_dict("records"):
+            sc = r["stadium_code"]
+            homes = [TEAM_KO[t] for t, h in TEAM_HOME.items() if h == sc]
+            text = (f"[{stadium_ko.get(sc, sc)}] {stadium_ko.get(sc, sc)} 주소: {r.get('address', '')}"
+                    f" ({'·'.join(homes)} 홈구장)")
+            add(fname, category, sc, None, sc, text, r)
+
+        # 1-2. external_places: in_stadium_flag=Y(구장 내 매장 22건) 전부 제외 — 구장 내 먹거리는 자리어때가 담당
+        #      (이전의 DAEGU 14건 예외는 자리어때 대구 43건이 생겨 2026-09-10 제거)
         df = read_csv("external_places.csv")
         for r in df.to_dict("records"):
             sc = r["stadium_code"]
-            inside = str(r.get("in_stadium_flag", "")).upper() == "Y"
-            if inside and sc != "DAEGU":
+            if str(r.get("in_stadium_flag", "")).upper() == "Y":
                 continue
-            category = "FOOD_IN" if inside else KAKAO_CATEGORY.get(r.get("category_group_code"), "SPOT")
+            category = KAKAO_CATEGORY.get(r.get("category_group_code"), "SPOT")
             header = stadium_ko.get(sc, sc)
             text = row_text(header, r)
-            if inside:
-                text += " (카카오 지도 기준 정보로 영업시간·폐업 여부 확인이 필요합니다.)"
             r["evidence_type"] = "THIRD_PARTY_API"
             add("external_places.csv", category, sc, None, str(r["attraction_id"]), text, r)
 
@@ -252,8 +294,8 @@ class Command(BaseCommand):
         short = sum(1 for c in chunks if len(c["content"]) < 50)
         by_cat = Counter(c["category"] for c in chunks)
         dup = n - len({c["doc_id"] for c in chunks})
-        self.stdout.write(f"\n총 청크: {n}  (기대 2,835 ± 200)")
-        self.stdout.write(f"stadium_code 없음: {no_stadium}  (docs 공통·기초규칙 몇 건만이면 정상)")
+        self.stdout.write(f"\n총 청크: {n}  (기대 3,832 ± 200, 2026-09-10 기준)")
+        self.stdout.write(f"stadium_code 없음: {no_stadium}  (정상 5 = 반입 공통 1 + 기초규칙 4)")
         self.stdout.write(f"50자 미만: {short}")
         self.stdout.write(f"doc_id 중복: {dup}  (0 이어야 함)")
         for cat, cnt in sorted(by_cat.items(), key=lambda x: -x[1]):
