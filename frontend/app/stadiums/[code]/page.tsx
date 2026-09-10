@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Icon } from "@/components/icons";
-import { StadiumIllustration } from "@/components/stadium-illustration";
 import { getStadium, getStadiumMapUrl, stadiums } from "@/lib/stadiums";
 
 type StadiumPageProps = { params: Promise<{ code: string }> };
@@ -32,16 +32,18 @@ export default async function StadiumPage({ params }: StadiumPageProps) {
       </section>
 
       <section className="container stadium-detail-content" aria-labelledby="stadium-info-heading">
-        <div className={`stadium-detail-art info-art-${stadium.color}`}>
-          <span className="stadium-detail-art-label">{stadium.code} BALLPARK</span>
-          <StadiumIllustration dome={stadium.code === "GOCHEOK"} />
-        </div>
+        <a className={`stadium-detail-art stadium-seat-art stadium-seat-art-${stadium.code.toLowerCase()}`} href={stadium.seatingMap.src} target="_blank" rel="noopener noreferrer" aria-label={`${stadium.name} 전체 좌석 안내도 원본 크게 보기 (새 창)`}>
+          <Image className={`stadium-detail-seat-map stadium-detail-seat-map-${stadium.code.toLowerCase()}`} src={stadium.seatingMap.src} alt={`${stadium.name} 전체 좌석 안내도`} fill sizes="(max-width: 760px) 100vw, 46vw" priority />
+          <span className="stadium-detail-art-label">{stadium.code} SEATING MAP</span>
+          <span className="stadium-seat-zoom">원본 크게 보기 ↗</span>
+        </a>
         <div className="stadium-detail-info">
           <p className="eyebrow">BALLPARK INFORMATION</p>
           <h2 id="stadium-info-heading">구장 정보</h2>
           <dl className="stadium-detail-facts">
             <div><dt>홈팀</dt><dd>{stadium.teams.join(" · ")}</dd></div>
             <div><dt>주소</dt><dd>{stadium.address}</dd></div>
+            <div><dt>좌석도</dt><dd><a className="stadium-official-seat-link" href={stadium.seatingMap.sourceUrl} target="_blank" rel="noopener noreferrer">구단 공식 안내에서 확인 ↗</a></dd></div>
           </dl>
           <div className="stadium-detail-actions">
             <Link href={`/routes/new?stadium=${encodeURIComponent(stadium.name)}`} className="button button-primary">이 구장으로 코스 만들기 <Icon name="arrow" size={17} /></Link>

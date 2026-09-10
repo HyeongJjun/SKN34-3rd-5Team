@@ -36,6 +36,7 @@ type ChatControls = ConversationSnapshot & {
   onReset: () => void;
   onSuggestion: (text: string, intent: ChatContext["intent"]) => void;
   onSelectConversation: (id: string) => void;
+  onContextChange: (context?: ChatContext) => void;
 };
 const ChatControlsContext = createContext<ChatControls | null>(null);
 
@@ -49,8 +50,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const isChatPage = pathname === "/chat";
+  const hasEmbeddedChat = pathname === "/routes/new";
   const [popupRequested, setPopupRequested] = useState(false);
-  const popupOpen = popupRequested && !isChatPage;
+  const popupOpen = popupRequested && !isChatPage && !hasEmbeddedChat;
   const [activeConversationId, setActiveConversationId] = useState("initial-chat");
   const [conversations, setConversations] = useState([{ id: "initial-chat", title: "새 대화" }]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -255,13 +257,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [isChatPage]);
 
   useEffect(() => {
-    if (!isChatPage && !popupOpen) return;
+    if (!isChatPage && !popupOpen && !hasEmbeddedChat) return;
     statusRequestRef.current?.abort();
     const controller = new AbortController();
     statusRequestRef.current = controller;
     void loadStatus(controller);
     return () => controller.abort();
-  }, [isChatPage, popupOpen, loadStatus]);
+  }, [hasEmbeddedChat, isChatPage, popupOpen, loadStatus]);
 
   useEffect(() => () => {
     requestVersion.current += 1;
@@ -279,9 +281,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       onCancel: cancelRequest, onReset: resetChat,
       onSuggestion: (text, intent) => { setDraft(text); setContext(current => ({ ...current, intent })); },
       onSelectConversation: selectConversation,
+      onContextChange: setContext,
     }}>
       {children}
-      {!isChatPage && !popupOpen && <button ref={launcherRef} type="button" className="chat-launcher" aria-label="직관 도우미 열기" aria-haspopup="dialog" onClick={openPopup}>
+      {!isChatPage && !hasEmbeddedChat && !popupOpen && <button ref={launcherRef} type="button" className="chat-launcher" aria-label="직관 도우미 열기" aria-haspopup="dialog" onClick={openPopup}>
         <Icon name="sparkles" size={23} /><span>직관 도우미</span>
       </button>}
       {popupOpen && <ChatPopup />}

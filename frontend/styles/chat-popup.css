@@ -85,6 +85,10 @@
 .chat-popup-send:disabled { color: #a8b8cf; background: #e9eff8; }
 .chat-popup-stop > span { width: 10px; height: 10px; border-radius: 2px; background: #fff; }
 .chat-popup-footnote { margin-top: 8px; color: #a4b0c0; text-align: center; font-size: 8px; line-height: 1.7; word-break: keep-all; }
+.chat-popup.chat-popup-embedded { position: relative; inset: auto; z-index: auto; width: 100%; max-width: none; height: 100%; min-height: 0; border-radius: 19px; box-shadow: 0 5px 24px #1b427909; }
+.chat-popup-embedded .chat-popup-header { min-height: 78px; }
+.chat-popup-embedded .chat-popup-heading h2 { font-size: 16px; letter-spacing: -.35px; }
+.chat-popup-embedded .chat-popup-transcript { padding-block: 22px 25px; }
 @keyframes chat-popup-thinking { 0%, 70%, 100% { opacity: .4; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-3px); } }
 @media (max-width: 767px) {
   .chat-popup { right: 12px; bottom: calc(78px + env(safe-area-inset-bottom, 0px)); width: calc(100% - 24px); max-width: 400px; height: min(610px, calc(100dvh - 90px - env(safe-area-inset-bottom, 0px))); border-radius: 20px; }
@@ -99,6 +103,7 @@
   .chat-popup-composer-area { padding: 10px 12px 11px; }
   .chat-popup-composer textarea { min-height: 27px; font-size: 16px; line-height: 1.65; }
   .chat-popup-footnote { padding-inline: 4px; font-size: 8px; }
+  .chat-popup.chat-popup-embedded { inset: auto; width: 100%; max-width: none; height: 100%; border-radius: 17px; }
 }
 @media (max-height: 570px) {
   .chat-popup-header { min-height: 57px; padding-block: 9px; }

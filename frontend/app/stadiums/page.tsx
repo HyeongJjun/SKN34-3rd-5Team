@@ -1,10 +1,17 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { StadiumIllustration } from "@/components/stadium-illustration";
 import { getStadiumMapUrl, stadiums } from "@/lib/stadiums";
 const regions = ["전체", "서울", "인천·경기", "대전·광주", "대구·부산·창원"];
+
+function getCityLabel(code: string, region: string) {
+  if (region === "인천·경기") return code === "MUNHAK" ? "인천" : "수원";
+  if (region === "대전·광주") return code === "DAEJEON" ? "대전" : "광주";
+  if (region === "대구·부산·창원") return code === "DAEGU" ? "대구" : code === "SAJIK" ? "부산" : "창원";
+  return "서울";
+}
 
 export default function StadiumsPage() {
   const [region, setRegion] = useState("전체");
@@ -23,7 +30,21 @@ export default function StadiumsPage() {
         </div>
         <p className="info-count" role="status">총 <strong>{filtered.length}</strong>개의 구장</p>
         <div className="info-stadium-grid">{filtered.map((stadium) => <article key={stadium.code} className="info-stadium-card">
-          <div className={`info-stadium-art info-art-${stadium.color}`}><span className="info-region-badge">{stadium.region === "인천·경기" ? stadium.code === "MUNHAK" ? "인천" : "수원" : stadium.region === "대전·광주" ? stadium.code === "DAEJEON" ? "대전" : "광주" : stadium.region === "대구·부산·창원" ? stadium.code === "DAEGU" ? "대구" : stadium.code === "SAJIK" ? "부산" : "창원" : "서울"}</span><StadiumIllustration dome={stadium.code === "GOCHEOK"} /></div>
+          <div className="info-stadium-art">
+            <Link href={`/stadiums/${stadium.code}`} className="info-stadium-photo-link" aria-label={`${stadium.name} 구장 정보 보기`}>
+              <Image
+                src={stadium.cardImage.src}
+                alt={`${stadium.name} 구장 전경`}
+                fill
+                sizes="(max-width: 450px) calc(100vw - 40px), (max-width: 760px) 50vw, (max-width: 1000px) 33vw, 380px"
+                className="info-stadium-photo"
+                style={{ objectPosition: stadium.cardImage.objectPosition }}
+              />
+              <span className="info-stadium-photo-shade" aria-hidden="true" />
+              <span className="info-region-badge">{getCityLabel(stadium.code, stadium.region)}</span>
+            </Link>
+            <a href={stadium.cardImage.creditUrl} target="_blank" rel="noopener noreferrer" className="info-stadium-photo-credit" aria-label={`${stadium.cardImage.credit} 사진 출처 또는 이용 조건 (새 창)`} title={stadium.cardImage.credit}>{stadium.cardImage.credit}</a>
+          </div>
           <div className="info-stadium-body"><p className="info-stadium-code">{stadium.code} BALLPARK</p><h2><Link href={`/stadiums/${stadium.code}`} className="info-stadium-detail-link" aria-label={`${stadium.name} 구장 정보 보기`}>{stadium.name} <span aria-hidden="true">↗</span></Link></h2><p className="info-address">{stadium.address}</p><div className="info-stadium-actions"><Link href={`/routes/new?stadium=${encodeURIComponent(stadium.name)}`} className="info-create-link">이 구장으로 코스 만들기 <span aria-hidden="true">→</span></Link><a href={getStadiumMapUrl(stadium)} target="_blank" rel="noopener noreferrer" className="info-map-link" aria-label={`${stadium.name} 카카오맵에서 보기 (새 창)`}>지도 ↗</a></div></div>
         </article>)}</div>
         {filtered.length === 0 && <div className="info-empty"><h2>찾으시는 구장이 없어요</h2><p>다른 구장 이름이나 지역으로 검색해 보세요.</p><button className="button button-secondary" type="button" onClick={() => { setQuery(""); setRegion("전체"); }}>전체 구장 보기</button></div>}

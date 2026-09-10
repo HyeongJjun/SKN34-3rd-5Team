@@ -67,14 +67,15 @@
 .info-stadium-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 25px; }
 .info-stadium-card { border: 1px solid #e7ecf3; border-radius: 15px; overflow: hidden; background: white; transition: transform .2s, box-shadow .2s; }
 .info-stadium-card:hover { transform: translateY(-4px); box-shadow: 0 14px 28px #1f47720b; }
-.info-stadium-art { position: relative; height: 177px; overflow: hidden; }
-.info-art-blue { background: #ecf3ff; color: #4684d4; }
-.info-art-violet { background: #f2effb; color: #8a70ba; }
-.info-art-rose { background: #fff0f1; color: #cd7b88; }
-.info-art-orange { background: #fff3e9; color: #d99b6c; }
-.info-art-green { background: #eaf6f2; color: #569f93; }
-.info-stadium-illustration { width: 100%; height: 100%; }
-.info-region-badge { position: absolute; left: 18px; top: 16px; z-index: 1; background: #ffffffc9; padding: 5px 10px; color: #3b526f; font-size: 10px; border-radius: 6px; }
+.info-stadium-art { position: relative; height: 177px; overflow: hidden; background: #eaf0f7; }
+.info-stadium-photo-link { position: absolute; inset: 0; display: block; }
+.info-stadium-photo { object-fit: cover; transition: transform .45s ease, filter .45s ease; }
+.info-stadium-photo-shade { position: absolute; inset: 0; background: linear-gradient(180deg, #15243a14 0%, transparent 48%, #10243d29 100%); pointer-events: none; }
+.info-stadium-card:hover .info-stadium-photo,
+.info-stadium-card:focus-within .info-stadium-photo { transform: scale(1.035); filter: saturate(1.05) contrast(1.02); }
+.info-region-badge { position: absolute; left: 18px; top: 16px; z-index: 1; background: #ffffffe8; padding: 5px 10px; color: #304966; font-size: 10px; font-weight: 650; border: 1px solid #ffffffa8; border-radius: 6px; box-shadow: 0 4px 14px #1634501c; backdrop-filter: blur(5px); }
+.info-stadium-photo-credit { position: absolute; z-index: 2; right: 8px; bottom: 7px; max-width: calc(100% - 16px); overflow: hidden; padding: 3px 6px; border-radius: 4px; background: #0b1d31a8; color: #fff; font-size: 7px; line-height: 1.35; letter-spacing: .1px; text-overflow: ellipsis; text-shadow: 0 1px 2px #0008; white-space: nowrap; transition: background .18s; }
+.info-stadium-photo-credit:hover, .info-stadium-photo-credit:focus-visible { background: #0b1d31e6; color: #fff; }
 .info-stadium-body { padding: 24px 23px 20px; }
 .info-stadium-code { font-size: 9px; letter-spacing: 1.4px; color: #9da7b4; margin: 0 0 9px; }
 .info-stadium-body h2 { font-size: 18px; font-weight: 750; letter-spacing: -.7px; margin: 0 0 10px; }
@@ -130,9 +131,17 @@
 .stadium-detail-back:hover { color: var(--blue); }
 .stadium-detail-intro > .eyebrow { display: block; margin: 0; color: var(--blue); }
 .stadium-detail-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: 60px; align-items: center; padding-top: 52px; }
-.stadium-detail-art { position: relative; border-radius: 22px; overflow: hidden; aspect-ratio: 1.4; }
-.stadium-detail-art-label { position: absolute; top: 24px; left: 26px; font-size: 10px; letter-spacing: 1.8px; opacity: .7; }
-.stadium-detail-art .info-stadium-illustration { padding: 28px 10px 8px; }
+.stadium-detail-art { position: relative; border-radius: 22px; overflow: hidden; aspect-ratio: 1.12; }
+.stadium-detail-art-label { position: absolute; z-index: 2; top: 18px; left: 20px; padding: 7px 10px; border: 1px solid #dce7f5; border-radius: 999px; background: #fffffff0; box-shadow: 0 5px 14px #233b5d12; color: #61738d; font-size: 9px; font-weight: 750; letter-spacing: 1.4px; }
+.stadium-seat-art { display: block; border: 1px solid #e2e9f2; background: #f6f8fb; cursor: zoom-in; box-shadow: 0 18px 42px #263f6810; }
+.stadium-seat-art-daejeon, .stadium-seat-art-suwon { aspect-ratio: .82; }
+.stadium-detail-seat-map { padding: 28px; object-fit: contain; transition: transform .25s ease; }
+.stadium-seat-art:hover .stadium-detail-seat-map { transform: scale(1.025); }
+.stadium-seat-zoom { position: absolute; z-index: 2; right: 18px; bottom: 17px; padding: 8px 11px; border-radius: 999px; background: #132f5fe8; color: white; font-size: 10px; font-weight: 700; box-shadow: 0 5px 16px #09234a35; }
+.stadium-detail-seat-map-daejeon { padding: 0; object-fit: cover; object-position: center 23%; }
+.stadium-detail-seat-map-suwon { padding: 0; object-fit: cover; object-position: center 21%; }
+.stadium-official-seat-link { color: var(--blue); font-weight: 650; text-decoration: underline; text-decoration-color: #bdd1f3; text-underline-offset: 4px; }
+.stadium-official-seat-link:hover { color: #143f91; }
 .stadium-detail-info h2 { margin: 10px 0 26px; font-size: 29px; letter-spacing: -1.2px; }
 .stadium-detail-facts { display: grid; gap: 23px; margin: 0 0 32px; }
 .stadium-detail-facts > div { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 20px; align-items: baseline; }
@@ -146,8 +155,12 @@
 }
 @media (max-width: 760px) {
   .stadium-detail-content { grid-template-columns: minmax(0, 1fr); gap: 30px; padding-top: 28px; }
-  .stadium-detail-art { aspect-ratio: 1.7; border-radius: 16px; }
+  .stadium-detail-art { aspect-ratio: 1.15; border-radius: 16px; }
+  .stadium-detail-art.stadium-seat-art-daejeon, .stadium-detail-art.stadium-seat-art-suwon { aspect-ratio: .82; }
   .stadium-detail-art-label { top: 18px; left: 20px; font-size: 9px; }
+  .stadium-detail-seat-map { padding: 18px; }
+  .stadium-detail-seat-map-daejeon, .stadium-detail-seat-map-suwon { padding: 0; }
+  .stadium-seat-zoom { right: 13px; bottom: 13px; }
   .stadium-detail-back { margin-bottom: 25px; }
   .stadium-detail-info h2 { font-size: 24px; margin-bottom: 23px; }
   .stadium-detail-facts dd { font-size: 13px; }
