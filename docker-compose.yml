@@ -16,6 +16,11 @@ services:
     build: ./backend
     container_name: django
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_HOST: db
     volumes:
       - ./backend:/app
     ports:
@@ -48,6 +53,19 @@ services:
     depends_on:
       - backend
       - frontend
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: 1000
+      MP_UI_AUTH: "admin:adminpw"
+    volumes:
+      - ./data/mailpit:/data
+    restart: unless-stopped
       
 volumes:
   postgres_data:
