@@ -6,7 +6,6 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import transaction
-from django.contrib.auth import logout as django_logout
 from .auth_service import AuthService
 from .serializers import SignupSerializer, ResetPasswordSerializer, SendEmailSerializer
 
@@ -104,25 +103,15 @@ def set_password(request):
     return Response(status=status.HTTP_200_OK)
 
 
-@api_view(['POST'])
-def logout(request):
-    """
-        사용자 로그아웃을 수행합니다.
-        Url: POST /api/auth/logout/
-        Return:
-            - HTTP_200_OK
-    """
-    django_logout(request)
-    return Response(status=status.HTTP_200_OK)
-
-
 @api_view(['GET'])
 def get_user(request):
     """
         로그인한 사용자 정보를 조회합니다.
-        Url: GET /api/auth/user/
+        Url: GET /auth/user (Nginx 경유: /api/auth/user)
+        Headers: Authorization: Bearer <access_token>
         Return:
             - HTTP_200_OK
+            - HTTP_401_UNAUTHORIZED (토큰 미전달 또는 JWT 인증 실패)
     """
     user = request.user
     if not user.is_authenticated:

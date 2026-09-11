@@ -2,7 +2,7 @@
   "info": {
     "name": "KBO 인증 API 회귀 테스트",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "사용법: Import 후 Collection Runner에서 `01 자동 회귀` 폴더만 선택해 순서대로 실행하세요. base_url 기본값은 Django 직접 연결 http://127.0.0.1:8000, Nginx 경유는 http://localhost/api 입니다. 끝에 /를 붙이지 마세요.\n매 실행마다 pm_ 고유 테스트 계정이 생성되고 비밀번호가 changed_password로 바뀝니다. 계정 삭제 API가 없어 테스트 계정은 DB에 남습니다. 운영 서버에서 실행하지 마세요. 자동 폴더는 메일 발송이나 LLM 호출 없이 동작합니다.\n토큰은 컬렉션 변수에 자동 저장됩니다. 실행 후 토큰을 지우고 공유하세요. 같은 이름의 Environment 변수는 만들지 마세요(컬렉션 변수를 덮어씁니다).\n02 수동 이메일 재설정은 기본 비활성화됩니다. enable_manual_reset=true로 바꾸고 별도 테스트 계정의 이메일을 등록한 다음 M1을 Send, 수신함 확인 및 uid/token 입력 후 M2, M3 순서로 Send하세요. 컬렉션 전체 Runner로 실행하지 마세요. 메일 요청 HTTP 200만으로 배달 성공을 판정하지 않습니다.\n04/05는 가입 정책, 16/17은 비밀번호 변경 후 기존 JWT 거부를 검증합니다. 실패를 현재 동작으로 맞춰 통과시키지 않습니다."
+    "description": "사용법: Import 후 Collection Runner에서 `01 자동 회귀` 폴더만 선택해 순서대로 실행하세요. base_url 기본값은 Django 직접 연결 http://127.0.0.1:8000, Nginx 경유는 http://localhost/api 입니다. 끝에 /를 붙이지 마세요.\n매 실행마다 pm_ 고유 테스트 계정이 생성되고 비밀번호가 changed_password로 바뀝니다. 계정 삭제 API가 없어 테스트 계정은 DB에 남습니다. 운영 서버에서 실행하지 마세요. 자동 폴더는 메일 발송이나 LLM 호출 없이 동작합니다.\n토큰은 컬렉션 변수에 자동 저장됩니다. 실행 후 토큰을 지우고 공유하세요. 같은 이름의 Environment 변수는 만들지 마세요(컬렉션 변수를 덮어씁니다).\n02 수동 이메일 재설정은 기본 비활성화됩니다. enable_manual_reset=true로 바꾸고 별도 테스트 계정의 이메일을 등록한 다음 M1을 Send, 수신함 확인 및 uid/token 입력 후 M2, M3 순서로 Send하세요. 컬렉션 전체 Runner로 실행하지 마세요. 메일 요청 HTTP 200만으로 배달 성공을 판정하지 않습니다.\n04/05는 가입 정책, 16/17은 비밀번호 변경 후 기존 JWT 거부를 검증합니다. 실패를 현재 동작으로 맞춰 통과시키지 않습니다.\n25–37은 사용자 조회와 JWT 로그아웃을 검증합니다. 로그아웃은 refresh 필수이며 성공 시 200 {}입니다. 폐기된 refresh는 재발급·반복 로그아웃 시 401, 기존 access는 최대 5분간 유효합니다. 다른 로그인은 유지됩니다. 검증을 위해 토큰을 잠시 보관하고 마지막 요청에서 제거합니다. 중간 실패·중단 시에는 토큰 변수를 직접 지워주세요."
   },
   "variable": [
     {
@@ -69,6 +69,16 @@
       "key": "reset_token",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "second_access",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "second_refresh",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -88,7 +98,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{base_url}}/auth/signup",
+            "url": "{{base_url}}/auth/signup/",
             "description": "매 실행마다 고유 username을 생성합니다. 실제 DB에 테스트 계정이 남습니다. 기존 사용자 변수는 사용하지 않습니다.",
             "body": {
               "mode": "raw",
@@ -108,7 +118,7 @@
                 "exec": [
                   "const id = pm.variables.replaceIn(\"{{$guid}}\").replace(/-/g, \"\");",
                   "pm.collectionVariables.set(\"username\", \"pm_\" + id);",
-                  "[\"access\", \"refresh\", \"old_access\", \"old_refresh\"].forEach(k => pm.collectionVariables.unset(k));"
+                  "[\"access\", \"refresh\", \"old_access\", \"old_refresh\", \"second_access\", \"second_refresh\"].forEach(k => pm.collectionVariables.unset(k));"
                 ]
               }
             },
@@ -136,7 +146,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{base_url}}/auth/signup",
+            "url": "{{base_url}}/auth/signup/",
             "description": "",
             "body": {
               "mode": "raw",
@@ -174,7 +184,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{base_url}}/auth/signup",
+            "url": "{{base_url}}/auth/signup/",
             "description": "",
             "body": {
               "mode": "raw",
@@ -212,7 +222,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{base_url}}/auth/signup",
+            "url": "{{base_url}}/auth/signup/",
             "description": "",
             "body": {
               "mode": "raw",
@@ -250,7 +260,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{base_url}}/auth/signup",
+            "url": "{{base_url}}/auth/signup/",
             "description": "",
             "body": {
               "mode": "raw",
@@ -288,7 +298,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{base_url}}/auth/signup",
+            "url": "{{base_url}}/auth/signup/",
             "description": "",
             "body": {
               "mode": "raw",
@@ -993,6 +1003,473 @@
                 "exec": [
                   "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
                   "pm.test(\"JSON error response\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "25 로그인한 사용자 조회",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access}}"
+              }
+            ],
+            "url": "{{base_url}}/auth/user",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));",
+                  "pm.test(\"User fields\", () => { const user = pm.response.json(); pm.expect(user).to.have.all.keys(\"id\", \"username\", \"email\"); pm.expect(user.username).to.equal(pm.collectionVariables.get(\"username\")); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "26 같은 사용자의 두 번째 로그인",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/signin",
+            "description": "첫 로그인 refresh만 폐기되는지 확인하기 위해 별도 JWT 쌍을 발급합니다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{changed_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  " const data = pm.response.json();",
+                  " pm.test(\"JWT pair returned\", () => { pm.expect(data.access).to.be.a(\"string\").and.not.empty; pm.expect(data.refresh).to.be.a(\"string\").and.not.empty; });",
+                  " if (data.access && data.refresh) { pm.collectionVariables.set(\"second_access\", data.access); pm.collectionVariables.set(\"second_refresh\", data.refresh); }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "27 첫 로그인 로그아웃",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/logout",
+            "description": "Authorization 없이 본문의 refresh를 폐기합니다. 기존 빈 본문 요청은 400입니다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"{{refresh}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));",
+                  "pm.test(\"Empty JSON object\", () => pm.expect(pm.response.json()).to.deep.equal({}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "28 로그아웃한 refresh 갱신 거부",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/token/refresh/",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"{{refresh}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "29 기존 access는 만료 전까지 유효",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access}}"
+              }
+            ],
+            "url": "{{base_url}}/auth/user",
+            "description": "선택한 정책에 따라 이미 발급한 access는 최대 5분간 유효합니다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "30 동일 refresh 반복 로그아웃 거부",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/logout",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"{{refresh}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "31 두 번째 로그인 access 유지",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{second_access}}"
+              }
+            ],
+            "url": "{{base_url}}/auth/user",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "32 두 번째 로그인 refresh 유지",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/token/refresh/",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"{{second_refresh}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));",
+                  "pm.test(\"Access returned\", () => pm.expect(pm.response.json().access).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "33 refresh 누락 거부",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/logout",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "34 잘못된 refresh 로그아웃 거부",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/logout",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"not-a-jwt\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "35 비로그인 사용자 조회 거부",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{base_url}}/auth/user",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));",
+                  "pm.test(\"Missing access message\", () => pm.expect(pm.response.json().detail).to.equal(\"인증이 필요합니다.\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "36 잘못된 access 헤더로도 refresh 폐기",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer not-a-jwt"
+              }
+            ],
+            "url": "{{base_url}}/auth/logout",
+            "description": "로그아웃은 access 헤더를 사용하지 않고 제출된 refresh를 검증합니다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"{{second_refresh}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));",
+                  "pm.test(\"Empty JSON object\", () => pm.expect(pm.response.json()).to.deep.equal({}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "37 두 번째 refresh 폐기 확인 및 변수 정리",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/auth/token/refresh/",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"{{second_refresh}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"JSON object\", () => pm.expect(pm.response.json()).to.be.an(\"object\"));",
+                  "[\"access\", \"refresh\", \"old_access\", \"old_refresh\", \"second_access\", \"second_refresh\"].forEach(k => pm.collectionVariables.unset(k));"
                 ]
               }
             }

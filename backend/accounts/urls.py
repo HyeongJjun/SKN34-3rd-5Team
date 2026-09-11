@@ -1,13 +1,14 @@
 from django.urls import path
 from rest_framework_simplejwt.views import (
+    TokenBlacklistView,
     TokenObtainPairView,
     TokenRefreshView,
 )
 
-from .views import change_password, set_password, signup, logout, get_user
+from .views import change_password, set_password, signup, get_user
 
 """
-    /api/auth/
+    Django 직접 호출은 /auth/, Nginx 경유는 /api/auth/입니다.
     
     POST /api/auth/signin
     POST /api/auth/token/refresh/
@@ -24,5 +25,5 @@ urlpatterns = [
     path("password/request", change_password, name="password_request"),
     path("password", set_password, name="password_reset"),
     path("user", get_user, name="auth_user"),
-    path("logout", logout, name="auth_logout"),
+    path("logout", TokenBlacklistView.as_view(), name="auth_logout"),
 ]
