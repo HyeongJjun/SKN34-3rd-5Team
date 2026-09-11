@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# KBO ROUTE 프론트엔드
 
-## Getting Started
+흰색·파란색, 큰 제목과 야구공 배경을 사용하는 직관 루트 서비스의 프론트 프로토타입입니다. Next.js App Router, React, TypeScript로 구현했습니다.
 
-First, run the development server:
+백엔드 담당자는 API 계약, 환경변수 소유권, 로컬 저장 데이터의 이전 방법을 정리한 [프론트엔드 → 백엔드 연동 인계서](../docs/FRONTEND_BACKEND_HANDOFF.md)를 먼저 확인하세요.
+
+## 실행
+
+`frontend` 폴더에서 실행합니다.
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+접속 주소는 `http://localhost:3000`입니다. 팀 설정에 맞춰 개발 서버를 3000번 포트로 고정했습니다. 다른 프로그램이 3000번을 사용 중이면 해당 서버를 먼저 중지해야 합니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+팀 Docker 환경은 저장소 루트에서 `docker compose up -d --build`로 실행합니다. 이번 변경에서 한글 글꼴 패키지 `@fontsource-variable/noto-sans-kr`를 추가했으므로 의존성 설치 또는 재빌드가 필요합니다. 전체 Docker 환경 구동은 별도 확인이 필요합니다.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 화면과 현재 동작
 
-## Learn More
+| 주소 | 구성 |
+| --- | --- |
+| `/` | 챗봇 질문, 티빙 당일 경기·선발 투수·좌우 이동, 정규리그 10팀 순위, 샘플 코스 6개 |
+| `/schedule` | 2026년 월·날짜별 경기 일정·결과, 투수·구장 정보, 구단 필터 |
+| `/standings` | 정규리그 팀 순위 전체 12개 항목, 타율·평균자책·최근 10경기, 기록별 정렬 |
+| `/routes` | 검색·9개 구장 필터·최신순·좋아요순·페이지 이동, 로딩·빈 상태 |
+| `/routes/[id]` | 본문, 지도·방문 순서, 좋아요·공유, 직접 저장한 코스 수정·삭제 확인 |
+| `/routes/new` | 제목·본문·구장·장소 좌표·방문 순서 편집, 지도·검색 연결, 선택 구장으로 챗봇 질문 |
+| `/stadiums` | 데이터에 포함된 9개 구장 검색과 위치 안내 |
+| `/guide` | 야구 기본 규칙, 관람 준비 체크리스트 |
+| `/login`, `/signup` | 입력 폼, 입력값 확인, 소셜 로그인 버튼 |
 
-To learn more about Next.js, take a look at the following resources:
+UI/UX 가이드의 큰 항목 2~5에 맞춰 여섯 기본 화면, 반응형, 로딩·오류 상태를 구성했습니다. 기존 파랑·흰색과 상단의 KBO 로고·로그인·회원가입을 유지하고 모바일 하단 탐색을 추가했습니다. 카드 목록은 모바일 1열·태블릿 2열·PC 3열입니다. 구현 범위와 팀 연결 작업은 [UI/UX 구현 현황](docs/UIUX_PROGRESS.md)을 참고하세요.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+코스·좋아요·조회 수는 현재 브라우저의 로컬 저장소에 보관됩니다. 내 코스는 내용을 복사하거나 다른 앱에 보내 공유할 수 있으며, 서버에 공개 게시글로 등록되지는 않습니다. 샘플 코스는 예시이고, 구장 사진은 실제 해당 구장의 사진이 아닌 분위기 이미지입니다. 사진 출처는 `public/images/SOURCES.md`에 있습니다.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+경기 일정·선발 투수·순위는 티빙 공개 데이터를 Next 서버에서 공통 수집하며 메인과 상세 페이지가 같은 자료를 사용합니다. 경기 전·무경기일은 1시간, 경기 시작부터 완료 확인까지는 5분 간격이며 수집 실패 시 마지막 성공 자료를 유지합니다. 과거 일정은 2026년 범위로 보관하고 서버 시작 시 저장된 예정 시각과 무관하게 오늘 자료를 한 번 확인합니다. 현재 저장은 서버의 로컬 파일을 사용합니다. 설정과 백엔드 인계 방법은 [KBO 수집 안내](docs/KBO_DATA.md)를 참고하세요.
 
-## Deploy on Vercel
+## 챗봇
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+대화창과 답변 서버를 분리했으며, `.env.example`의 기본값은 API 키 없이 동작하는 예시 응답입니다. `frontend/.env.local`에서 `CHAT_PROVIDER=openai`, `OPENAI_MODEL=gpt-5.6-luna`, 서버 전용 `OPENAI_API_KEY`를 설정하고 서버를 재시작하면 Luna 연결을 사용할 수 있습니다. 설정 후 대화창에서 질문을 보내 실제 답변이 도착하는지 확인합니다.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+팀 챗봇이 준비되면 `CHAT_PROVIDER=backend`와 `CHAT_BACKEND_URL`로 전환합니다. 설정 방법, 요청 형식과 수정할 파일은 [챗봇 연결 가이드](docs/CHAT_SETUP.md)를 참고하세요.
+
+## 실제 서비스 연결 시 남은 작업
+
+- 회원·소셜 로그인 API, 세션과 작성자 권한 연결. 현재 로그인 성공 처리는 하지 않습니다.
+- 게시글·좋아요·페이지 조회 API 연결. 현재 로컬 저장소는 `lib/routes.ts`에 모았습니다.
+- 카카오맵 웹 도메인 등록 후 실제 지도 확인. SDK·검색·마커·방문 순서 연결선 코드와 상세 복원은 구현했지만, 현재 로컬 SDK는 401을 반환합니다. 사용 중인 카카오 앱에 `http://localhost:3000`을 등록한 뒤 재확인합니다.
+- CKEditor 5 라이선스 설정과 이미지 업로드. 사용자가 라이선스 없이 우선 진행하기로 선택해 현재는 일반 본문 입력을 사용하며, `components/editor.tsx`에 라이선스 설정 어댑터를 준비했습니다.
+- 챗봇의 팀 RAG·경기 정보·지도 데이터 연결과 답변 검증. 작성 화면의 코스 예시는 미리 작성된 내용입니다.
+- 서비스 정책 문구 확정. 회원가입 화면의 정책 안내는 초안입니다.
+
+## 검사
+
+```bash
+npm run lint
+npm run build
+npm run test:chat
+npm run test:kbo
+```
+
+최종 브라우저 확인 대상은 360px·768px·1440px입니다. 결과와 외부 연결 상태는 [UI/UX 구현 현황](docs/UIUX_PROGRESS.md)에 구분해 기록합니다.
