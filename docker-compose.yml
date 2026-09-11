@@ -12,6 +12,12 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+      - ./backend/.env
+    environment:
+      DB_HOST: db
     volumes:
       - ./backend:/app
       - ./data:/data:ro    # build_index 가 읽는 전처리 CSV
@@ -21,9 +27,6 @@ services:
     depends_on:
       - db
     command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
-  
-    env_file:
-      - ./backend/.env
 
   frontend:
     build: ./frontend
@@ -49,6 +52,19 @@ services:
     depends_on:
       - backend
       - frontend
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: 1000
+      MP_UI_AUTH: "admin:adminpw"
+    volumes:
+      - ./data/mailpit:/data
+    restart: unless-stopped
       
 volumes:
   postgres_data:
