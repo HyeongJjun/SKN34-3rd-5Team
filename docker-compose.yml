@@ -1,32 +1,35 @@
 services:
   db:
     image: pgvector/pgvector:pg18
-    container_name: postgres
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: mydb
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
+    env_file:
+      - ./.env
 
   backend:
     build: ./backend
-    container_name: django
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+      - ./backend/.env
+    environment:
+      DB_HOST: db
     volumes:
       - ./backend:/app
+      - ./data:/data:ro    # build_index 가 읽는 전처리 CSV
+      - ./docs:/docs:ro    # build_index 가 읽는 JSON/md
     ports:
       - "8000:8000"
     depends_on:
       - db
-    command: python manage.py runserver 0.0.0.0:8000
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
 
   frontend:
     build: ./frontend
-    container_name: nextjs
     restart: unless-stopped
     volumes:
       - ./frontend:/app
@@ -36,10 +39,11 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+    env_file:
+      - ./frontend/.env.local
 
   nginx:
     image: nginx:alpine
-    container_name: nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -48,6 +52,19 @@ services:
     depends_on:
       - backend
       - frontend
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: 1000
+      MP_UI_AUTH: "admin:adminpw"
+    volumes:
+      - ./data/mailpit:/data
+    restart: unless-stopped
       
 volumes:
   postgres_data:
