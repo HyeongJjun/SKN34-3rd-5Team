@@ -101,3 +101,29 @@ def set_password(request):
     # 3. 비밀번호 정책 검증 및 저장
     AuthService.set_password(user, serializer.validated_data['password'])
     return Response(status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+def get_user(request):
+    """
+        로그인한 사용자 정보를 조회합니다.
+        Url: GET /auth/user (Nginx 경유: /api/auth/user)
+        Headers: Authorization: Bearer <access_token>
+        Return:
+            - HTTP_200_OK
+            - HTTP_401_UNAUTHORIZED (토큰 미전달 또는 JWT 인증 실패)
+    """
+    user = request.user
+    if not user.is_authenticated:
+        return Response(
+            {'detail': '인증이 필요합니다.'},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    return Response({
+            'id': user.id,
+            'username': user.get_username(),
+            'email': getattr(user, 'email', None),
+        },
+        status=status.HTTP_200_OK,
+    )

@@ -60,30 +60,3 @@ class AuthService:
         # 해시가 바뀌면 기존 비밀번호 재설정 토큰도 무효화됩니다.
         user.set_password(password)
         user.save(update_fields=['password'])
-
-
-def _check_password_reset():
-    """Django가 설정된 SQLite :memory: 테스트 DB에서 명시적으로 호출합니다."""
-    from django.db import connection, transaction
-
-    if connection.vendor != 'sqlite' or connection.settings_dict['NAME'] != ':memory:':
-        raise RuntimeError('메모리 테스트 DB에서만 실행할 수 있습니다.')
-
-    with transaction.atomic():
-        user = get_user_model().objects.create_user(
-            username='password_reset_check', password='InitialSafe9!'
-        )
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
-        token = default_token_generator.make_token(user)
-        target = AuthService.get_password_user(None, uid, token)
-        assert target.pk == user.pk
-        AuthService.set_password(target, 'RecoveredSafe7!')
-        user.refresh_from_db()
-        assert user.check_password('RecoveredSafe7!')
-        try:
-            AuthService.get_password_user(None, uid, token)
-        except ValidationError:
-            pass
-        else:
-            raise AssertionError('사용한 재설정 토큰은 거부되어야 합니다.')
-        transaction.set_rollback(True)

@@ -33,12 +33,14 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+AUTH_USER_MODEL = 'accounts.CustomUser'
 
 # Application definition
 
 INSTALLED_APPS = [
     'rest_framework',
     "rest_framework_simplejwt",
+    'rest_framework_simplejwt.token_blacklist',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -86,10 +88,10 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME"),
-        "USER": os.getenv("DB_USER"),
-        "PASSWORD": os.getenv("DB_PASSWORD"),
-        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+        "NAME": os.getenv("DB_NAME", "mydb"),
+        "USER": os.getenv("DB_USER", "myuser"),
+        "PASSWORD": os.getenv("DB_PASSWORD", "mypassword"),
+        "HOST": os.getenv("DB_HOST", "db"),  # 로컬 도커 기본값. 원격 DB는 backend/.env 의 DB_HOST 로
         "PORT": os.getenv("DB_PORT", "5432"),
     }
 }
