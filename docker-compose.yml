@@ -1,70 +1,125 @@
 services:
+
+  # ========================
+  # PostgreSQL + pgvector
+  # ========================
   db:
     image: pgvector/pgvector:pg18
     restart: unless-stopped
+
     ports:
       - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql
-    env_file:
-      - ./.env
 
+    volumes:
+      # PostgreSQL 18에서는 상위 디렉터리를 마운트
+      - postgres_data:/var/lib/postgresql
+
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+
+
+  # ========================
+  # Django Backend
+  # ========================
   backend:
     build: ./backend
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
-      - ./backend/.env
+
     environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+
+      # Docker 내부에서는 db 서비스명으로 접근
       DB_HOST: db
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+
     volumes:
       - ./backend:/app
-      - ./data:/data:ro    # build_index 가 읽는 전처리 CSV
-      - ./docs:/docs:ro    # build_index 가 읽는 JSON/md
+
+      # build_index에서 읽는 전처리 CSV
+      - ./data:/data:ro
+
+      # build_index에서 읽는 JSON / md
+      - ./docs:/docs:ro
+
     ports:
       - "8000:8000"
+
     depends_on:
       - db
-    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
 
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+
+
+  # ========================
+  # Next.js Frontend
+  # ========================
   frontend:
     build: ./frontend
     restart: unless-stopped
+
     volumes:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
+
     ports:
       - "3000:3000"
+
     depends_on:
       - backend
-    env_file:
-      - ./frontend/.env.local
 
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+
+
+  # ========================
+  # Nginx
+  # ========================
   nginx:
     image: nginx:alpine
     restart: unless-stopped
+
     ports:
       - "80:80"
+
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
     depends_on:
       - backend
       - frontend
 
+
+  # ========================
+  # Mailpit
+  # ========================
   mailpit:
     image: axllent/mailpit:latest
+    restart: unless-stopped
+
     ports:
       - "1025:1025"
       - "8025:8025"
+
     environment:
       MP_DATABASE: /data/mailpit.db
       MP_MAX_MESSAGES: 1000
       MP_UI_AUTH: "admin:adminpw"
+
     volumes:
       - ./data/mailpit:/data
-    restart: unless-stopped
-      
+
+
+# ========================
+# Named Volumes
+# ========================
 volumes:
   postgres_data:
