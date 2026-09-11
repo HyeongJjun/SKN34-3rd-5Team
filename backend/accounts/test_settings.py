@@ -25,7 +25,11 @@ from django.conf import Settings
 
 with patch("dotenv.load_dotenv") as load_dotenv:
     settings = Settings("config.settings")
-    load_dotenv.assert_called_once_with(settings.BASE_DIR.parent / ".env", override=False)
+    from unittest.mock import call
+    assert load_dotenv.call_args_list == [
+        call(settings.BASE_DIR / ".env", override=False),
+        call(settings.BASE_DIR.parent / ".env", override=False),
+    ]
 print(json.dumps({
     "mailers": settings.MAILERS,
     "default_from_email": settings.DEFAULT_FROM_EMAIL,
