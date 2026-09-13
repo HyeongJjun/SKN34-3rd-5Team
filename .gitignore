@@ -222,3 +222,6 @@ frontend/.env.local
 # Frontend application source, not Python build output.
 !frontend/lib/
 !frontend/lib/**
+
+# Development member credential hashes
+frontend/.member-preview/

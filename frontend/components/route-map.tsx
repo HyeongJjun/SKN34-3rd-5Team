@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode } from "react";
 import { loadKakaoMaps, type KakaoMap, type KakaoMaps, type KakaoOverlay, type KakaoPlace, type MapClickEvent } from "@/lib/kakao-maps";
 import { areValidCoordinates, type RouteStop } from "@/lib/routes";
 import { coursePointLabel } from "@/lib/drawn-course";
 import { CourseTravelPanel, useCourseDirections, useTravelOverlay } from "./course-travel";
 import { Icon } from "./icons";
 
-type Props = { stops: RouteStop[]; searchable?: boolean; onAddStop?: (stop: RouteStop) => void };
+type Props = { stops: RouteStop[]; searchable?: boolean; allowOriginSelection?: boolean; mapFirst?: boolean; children?: ReactNode; travelAside?: ReactNode; onAddStop?: (stop: RouteStop) => void };
 
-export function RouteMap({ stops, searchable = false, onAddStop }: Props) {
+export function RouteMap({ stops, searchable = false, allowOriginSelection = true, mapFirst = false, children, travelAside, onAddStop }: Props) {
   const travel = useCourseDirections(stops);
   const [fitRequest, setFitRequest] = useState(0);
   const [mapState, setMapState] = useState<KakaoMap | null>(null);
@@ -111,7 +111,7 @@ export function RouteMap({ stops, searchable = false, onAddStop }: Props) {
 
   return (
     <section className="route-map" aria-label={searchable ? "방문 장소 검색과 지도" : "코스 지도"}>
-      <CourseTravelPanel travel={travel} stops={stops} onFit={() => setFitRequest((value) => value + 1)} />
+      {!mapFirst && <CourseTravelPanel travel={travel} stops={stops} originReplacement={allowOriginSelection ? undefined : false} onFit={() => setFitRequest((value) => value + 1)} />}
       {searchable && <div className="route-map-search" role="search">
         <label htmlFor={searchId} className="sr-only">지도에서 장소 검색</label>
         <Icon name="search" size={19} />
@@ -124,7 +124,9 @@ export function RouteMap({ stops, searchable = false, onAddStop }: Props) {
         {!sdk && <div className="route-map-placeholder" role="status"><Icon name="stadium" size={38} /><strong>{error ? "지도를 잠시 불러오지 못했어요" : "코스를 지도에 펼치는 중"}</strong><p>{error || "방문할 장소와 순서를 준비하고 있어요."}</p>{error ? <button className="button button-secondary" type="button" onClick={() => { setError(""); setAttempt(value => value + 1); }}>다시 불러오기</button> : <span className="ui-spinner" />}</div>}
         {sdk && <span className="route-map-label">{searchable ? "지도에서 위치를 눌러 직접 추가할 수 있어요" : "코스 미리보기"}</span>}
       </div>
+      {children}
       <p className="route-map-caption">선택한 이동 수단의 실제 경로를 표시해요. 조회할 수 없는 구간은 선을 표시하지 않아요.{first && <> <a href={`https://map.kakao.com/link/map/${encodeURIComponent(first.name)},${first.lat},${first.lng}`} target="_blank" rel="noreferrer">카카오맵 열기 ↗</a></>}</p>
+      {mapFirst && <div className={travelAside ? "route-travel-columns" : undefined}><CourseTravelPanel travel={travel} stops={stops} originReplacement={allowOriginSelection ? undefined : false} onFit={() => setFitRequest((value) => value + 1)} />{travelAside}</div>}
       {searching && <p className="route-map-note" role="status">장소를 검색하고 있어요.</p>}
       {searchNote && <p className="route-map-note" role="status">{searchNote}</p>}
       {results.length > 0 && <ul className="route-map-results" aria-label="장소 검색 결과">{results.map(place => <li key={place.id}><div><strong>{place.place_name}</strong><span>{place.road_address_name || place.address_name}</span></div><button type="button" aria-label={`${place.place_name} 방문 장소에 추가`} onClick={() => add({ name: place.place_name, lat: Number(place.y), lng: Number(place.x), category: place.category_group_name || "방문 장소" })}>추가 +</button></li>)}</ul>}

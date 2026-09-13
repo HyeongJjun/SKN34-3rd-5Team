@@ -14,7 +14,7 @@ import type { CSSProperties, ReactNode } from "react";
 const LEG_COLORS = ["#3478dc", "#d76a32", "#8954b9", "#218777", "#c44776", "#9b7928", "#467b90", "#a65346", "#6663b5", "#52853d", "#ae549a", "#55718c"];
 const legColor = (index: number) => LEG_COLORS[index % LEG_COLORS.length];
 
-export function useCourseDirections(stops: RouteStop[], enabled = true, initialStart?: TravelPoint) {
+export function useCourseDirections(stops: RouteStop[], enabled = true, initialStart?: TravelPoint, replaceOrigin?: (point: TravelPoint) => boolean) {
   const [legSelection, setLegSelection] = useState<{ key: string; index: number } | null>(null);
   const [mode, setMode] = useState<TravelMode>("walk");
   const [origin, setOrigin] = useState<"first" | "current" | "custom">(initialStart ? "custom" : "first");
@@ -27,7 +27,7 @@ export function useCourseDirections(stops: RouteStop[], enabled = true, initialS
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<{ key: string; data?: CourseDirections; error?: string } | null>(null);
   const startLocation = origin === "current" ? location : origin === "custom" ? customLocation : null;
-  const points = startLocation ? [startLocation, ...stops] : stops;
+  const points = useMemo(() => startLocation ? [startLocation, ...stops] : stops, [startLocation, stops]);
   const ready = enabled && stops.length > 0 && points.length >= 2 && (origin === "first" || Boolean(startLocation)) && !locating && !picking;
   const payload = JSON.stringify({ mode, points: points.map(({ lat, lng }) => ({ lat, lng })) });
   const requestKey = `${payload}:${attempt}`;
@@ -56,14 +56,21 @@ export function useCourseDirections(stops: RouteStop[], enabled = true, initialS
     setLocating(true);
     navigator.geolocation.getCurrentPosition((position) => {
       if (locationRequest.current !== sequence) return;
-      setLocation({ lat: position.coords.latitude, lng: position.coords.longitude }); setLocating(false);
+      const point = { lat: position.coords.latitude, lng: position.coords.longitude };
+      if (replaceOrigin?.(point)) { setLocation(null); setOrigin("first"); }
+      else setLocation(point);
+      setLocating(false);
     }, (error) => {
       if (locationRequest.current !== sequence) return;
       setLocating(false); setLocationError(error.code === 1 ? "위치 권한이 거부됐어요. 권한을 허용하거나 코스 1번에서 출발해 주세요." : "현재 위치를 확인하지 못했어요. 다시 시도하거나 코스 1번에서 출발해 주세요.");
     }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   }
   function chooseCustom() { locationRequest.current++; setLocating(false); setLocationError(""); setOrigin("custom"); setPicking(true); }
-  function pickLocation(point: TravelPoint) { setCustomLocation(point); setPicking(false); setOrigin("custom"); }
+  function pickLocation(point: TravelPoint) {
+    if (replaceOrigin?.(point)) { setCustomLocation(null); setOrigin("first"); }
+    else { setCustomLocation(point); setOrigin("custom"); }
+    setPicking(false);
+  }
   function cancelPicking() { setPicking(false); if (!customLocation) setOrigin("first"); }
   function reset() {
     locationRequest.current++;

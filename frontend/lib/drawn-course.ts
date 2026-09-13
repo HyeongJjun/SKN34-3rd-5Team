@@ -22,7 +22,7 @@ export function undoDrawnPoint(stops: RouteStop[], history: string[]) {
   const remaining = [...history];
   while (remaining.length) {
     const id = remaining.pop()!;
-    const point = stops.find((stop) => (stop.isMapPoint || stop.isDrawnPoint) && stop.placeId === id);
+    const point = stops.find((stop) => (stop.isMapPoint || stop.isDrawnPoint) && (stop.visitId ?? stop.placeId) === id);
     if (point) return { stops: renumberMapPoints(stops.filter((stop) => stop !== point)), history: remaining, removed: point };
   }
   return { stops, history: remaining, removed: undefined };

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { ChatPopup } from "@/components/chat-popup";
 import Editor from "@/components/editor";
@@ -27,7 +27,7 @@ function WriterIcon({ kind }: { kind: "spark" | "pin" | "arrow" | "save" }) {
 }
 
 type WriterTab = "write" | "chat";
-type Confirmation = { title: string; description: string; label: string; action: () => void };
+type Confirmation = { title: string; description: string; label: string; action: () => void; cancelLabel?: string; cancelAction?: () => void };
 const writerTabs: { id: WriterTab; label: string }[] = [{ id: "write", label: "루트 작성" }, { id: "chat", label: "챗봇" }];
 type WriterDraft = {
   stadiumCode: string;
@@ -46,22 +46,23 @@ type WriterDraft = {
 // Keep unfinished work in memory only; saving or explicitly discarding removes it.
 const writerDrafts = new Map<string, WriterDraft>();
 
-export default function RouteWriter({ editId, initialStadium }: { editId?: string; initialStadium?: string }) {
+export default function RouteWriter({ editId, copyId, initialStadium }: { editId?: string; copyId?: string; initialStadium?: string }) {
   const routes = useRoutes();
   const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
-  const existing = editId ? routes.find((route) => route.id === editId) : undefined;
-  if (editId && !hydrated) return <main className="container writer-empty"><p role="status"><span className="writer-spinner" aria-hidden="true" />저장된 루트를 불러오고 있어요.</p></main>;
-  if (editId && !existing) return <main className="container writer-empty"><span className="eyebrow">MY ROUTE</span><h1>저장된 루트를 찾을 수 없어요</h1><p>이 기기에 저장된 루트인지 확인하거나 새로운 루트를 만들어보세요.</p><Link href="/routes" className="button button-secondary">루트 목록으로</Link></main>;
-  return <WriterForm key={existing?.id ?? initialStadium ?? "new"} existing={existing} initialStadium={initialStadium} />;
+  const sourceId = copyId ?? editId;
+  const existing = sourceId ? routes.find((route) => route.id === sourceId) : undefined;
+  if (sourceId && !hydrated) return <main className="container writer-empty"><p role="status"><span className="writer-spinner" aria-hidden="true" />저장된 루트를 불러오고 있어요.</p></main>;
+  if (sourceId && !existing) return <main className="container writer-empty"><span className="eyebrow">MY ROUTE</span><h1>저장된 루트를 찾을 수 없어요</h1><p>이 기기에 저장된 루트인지 확인하거나 새로운 루트를 만들어보세요.</p><Link href="/routes" className="button button-secondary">루트 목록으로</Link></main>;
+  return <WriterForm key={`${copyId ? "copy:" : "edit:"}${existing?.id ?? initialStadium ?? "new"}`} copying={Boolean(copyId)} existing={existing} initialStadium={initialStadium} />;
 }
 
-function WriterForm({ existing, initialStadium }: { existing?: TripRoute; initialStadium?: string }) {
+function WriterForm({ existing, copying = false, initialStadium }: { existing?: TripRoute; copying?: boolean; initialStadium?: string }) {
   const router = useRouter();
   const { onContextChange } = useChat();
   const requested = (existing?.stadium ?? initialStadium ?? "").replace(/\s/g, "").toUpperCase();
   const initial = stadiums.find((stadium) => stadium.code === requested || (requested && stadium.name.replace(/\s/g, "").toUpperCase().includes(requested))) ?? stadiums[0];
-  const draftKey = existing ? `edit:${existing.id}` : `new:${initial.code}`;
-  const [restoredDraft] = useState(() => writerDrafts.get(draftKey));
+  const draftKey = existing ? `${copying ? "copy" : "edit"}:${existing.id}` : `new:${initial.code}`;
+  const [restoredDraft] = useState(() => copying ? undefined : writerDrafts.get(draftKey));
   const [stadiumCode, setStadiumCode] = useState(restoredDraft?.stadiumCode ?? initial.code);
   const [title, setTitle] = useState(restoredDraft?.title ?? existing?.title ?? "");
   const [content, setContent] = useState(restoredDraft?.content ?? existing?.content ?? "");
@@ -76,6 +77,7 @@ function WriterForm({ existing, initialStadium }: { existing?: TripRoute; initia
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const dirty = useRef(restoredDraft?.dirty ?? false);
   const savingRef = useRef(false);
+  const savedRouteRef = useRef<TripRoute | undefined>(existing && !copying && !existing.isSample ? existing : undefined);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const current = stadiums.find((stadium) => stadium.code === stadiumCode)!;
@@ -117,7 +119,8 @@ function WriterForm({ existing, initialStadium }: { existing?: TripRoute; initia
     return () => { if (dialog.open) dialog.close(); opener?.focus(); };
   }, [confirmation]);
 
-  function markDirty() { dirty.current = true; setError(""); }
+  const markDirty = useCallback(() => { dirty.current = true; setError(""); }, []);
+  const changeStops = useCallback((next: RouteStop[]) => { setStops(next); markDirty(); }, [markDirty]);
   function changeStadium(code: string) {
     if (code === stadiumCode) return;
     const change = () => { setStadiumCode(code); setStops([]); setStart(undefined); markDirty(); };
@@ -134,33 +137,51 @@ function WriterForm({ existing, initialStadium }: { existing?: TripRoute; initia
     else return;
     event.preventDefault(); setTab(writerTabs[next].id); document.getElementById(`writer-tab-${writerTabs[next].id}`)?.focus();
   }
-  async function saveCourse() {
+  async function saveCourse(askReview = true) {
     if (savingRef.current) return;
     setError("");
     if (!canSave) { setError("코스 이름과 방문 장소를 확인해 주세요. 본문은 선택 사항이며 12,000자까지 작성할 수 있어요."); return; }
     savingRef.current = true; setSaving(true);
-    const id = existing && !existing.isSample ? existing.id : `local-${crypto.randomUUID()}`;
+    const saved = savedRouteRef.current;
+    const id = saved?.id ?? `local-${crypto.randomUUID()}`;
     const route: TripRoute = {
       id, title: title.trim(), stadium: current.name, description: (plainContent.trim() || withCourseStart(stops, start).map((stop) => stop.name).join(" → ")).replace(/\s+/g, " ").slice(0, 100),
       content: content.trim(), ...(contentFormat ? { contentFormat } : {}), tags, duration, cover: existing?.cover ?? "/images/stadium-night.jpg", stops, ...(start ? { start } : {}),
-      author: "나의 코스", likes: existing && !existing.isSample ? existing.likes : 0, views: existing && !existing.isSample ? existing.views : 0,
-      isSample: false, createdAt: existing && !existing.isSample ? existing.createdAt : new Date().toISOString(),
+      author: "나의 코스", likes: saved?.likes ?? 0, views: saved?.views ?? 0,
+      isSample: false, createdAt: saved?.createdAt ?? new Date().toISOString(),
     };
     try {
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      saveRoute(route); writerDrafts.delete(draftKey); dirty.current = false; router.push(`/routes/${encodeURIComponent(id)}`);
+      saveRoute(route); savedRouteRef.current = route; writerDrafts.delete(draftKey); dirty.current = false;
+      savingRef.current = false; setSaving(false);
+      const showSavedCourse = () => router.push(`/routes/${encodeURIComponent(id)}`);
+      if (askReview) {
+        setConfirmation({
+          title: "코스 후기를 작성하시겠어요?",
+          description: "코스가 이 브라우저에 저장됐어요. 후기를 추가로 작성할 수 있어요.",
+          label: "예", cancelLabel: "아니요", cancelAction: showSavedCourse,
+          action: () => {
+            setTab("write");
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              const panel = document.getElementById("writer-panel-write");
+              panel?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
+              panel?.focus({ preventScroll: true });
+            }));
+          },
+        });
+      } else router.push("/routes");
     } catch { savingRef.current = false; setSaving(false); setError("저장하지 못했어요. 브라우저 저장 공간이나 개인정보 보호 설정을 확인해 주세요. 작성 내용은 이 화면에 남아 있어요."); }
   }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void saveCourse();
+    void saveCourse(false);
   }
 
   return (
     <main className="writer-page">
       <div className="container">
         <div className="writer-page-heading">
-          <div><span className="eyebrow">MAKE YOUR GAME DAY</span><h1>{existing && !existing.isSample ? "나의 루트 수정하기" : "나만의 직관 루트 만들기"}</h1></div>
+          <div><span className="eyebrow">MAKE YOUR GAME DAY</span><h1>{existing && !copying && !existing.isSample ? "나의 루트 수정하기" : "나만의 직관 루트 만들기"}</h1></div>
           <Link href="/routes" className="writer-back">← 루트 둘러보기</Link>
         </div>
         <div className="writer-mobile-tabs" role="tablist" aria-label="루트 작성 도구">{writerTabs.map((item, index) => <button type="button" role="tab" key={item.id} id={`writer-tab-${item.id}`} aria-controls={item.id === "write" ? "writer-panel-write writer-panel-planner" : "writer-panel-chat"} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} onClick={() => changeTab(item.id)} onKeyDown={(event) => tabKey(event, index)}>{item.label}</button>)}</div>
@@ -172,7 +193,7 @@ function WriterForm({ existing, initialStadium }: { existing?: TripRoute; initia
                 <div><div className="writer-section-title"><span>01</span><h2 id="planner-heading">핀을 골라, 나만의 코스로</h2></div><p>경기 전 식사부터 경기 후 산책까지. 가고 싶은 장소를 직접 이어보세요.</p></div>
                 <div className="writer-field planner-stadium-field"><label htmlFor="route-stadium">어느 구장으로 떠나나요?</label><select id="route-stadium" value={stadiumCode} onChange={(event) => changeStadium(event.target.value)}>{stadiums.map((stadium) => <option key={stadium.code} value={stadium.code}>{stadium.name}</option>)}</select></div>
               </div>
-              <NearbyRoutePlanner key={stadiumCode} stadium={current} stops={stops} onChange={(next) => { setStops(next); markDirty(); }} initialStart={start} onStartChange={setStart} courseName={title} onCourseNameChange={(name) => { setTitle(name); markDirty(); }} onSaveCourse={saveCourse} saving={saving} saveError={error} />
+              <NearbyRoutePlanner key={stadiumCode} stadium={current} stops={stops} onChange={changeStops} initialStart={start} onStartChange={setStart} courseName={title} onCourseNameChange={(name) => { setTitle(name); markDirty(); }} onSaveCourse={() => saveCourse()} saving={saving} saveError={error} />
             </section>
             <div className="writer-writing writer-panel" id="writer-panel-write" role="tabpanel" aria-labelledby="writer-tab-write" tabIndex={0}>
               <section className="writer-card">
@@ -189,11 +210,11 @@ function WriterForm({ existing, initialStadium }: { existing?: TripRoute; initia
           </fieldset>
           <div className="writer-save-area">
             {error && <div role="alert" className="writer-error">{error}</div>}
-            <div className="writer-save-row"><p><strong>{canSave ? "나의 직관 루트가 준비됐어요." : "코스 이름과 방문 장소를 채워주세요."}</strong><span>이 브라우저에 저장돼요. 다른 사용자에게 공개되지 않아요.</span></p><button className="button button-primary" type="submit" disabled={!canSave || saving}>{saving ? <><span className="writer-spinner" aria-hidden="true" />저장하고 있어요</> : <><WriterIcon kind="save" />이 기기에 저장</>}</button></div>
+            <div className="writer-save-row"><p><strong>{canSave ? "나의 직관 루트가 준비됐어요." : "코스 이름과 방문 장소를 채워주세요."}</strong><span>이 브라우저에 저장돼요. 다른 사용자에게 공개되지 않아요.</span></p><button className="button button-primary" type="submit" disabled={!canSave || saving}>{saving ? <><span className="writer-spinner" aria-hidden="true" />저장하고 있어요</> : <><WriterIcon kind="save" />작성 완료</>}</button></div>
           </div>
         </form>
         <dialog ref={dialogRef} className="writer-confirm-dialog" aria-labelledby="writer-confirm-title" aria-describedby="writer-confirm-description" onCancel={(event) => { event.preventDefault(); setConfirmation(null); }}>
-          {confirmation && <><span className="writer-confirm-icon"><WriterIcon kind="save" /></span><h2 id="writer-confirm-title">{confirmation.title}</h2><p id="writer-confirm-description">{confirmation.description}</p><div className="writer-confirm-actions"><button type="button" className="button button-secondary" autoFocus onClick={() => setConfirmation(null)}>계속 작성하기</button><button type="button" className="button button-primary" onClick={() => { const action = confirmation.action; setConfirmation(null); action(); }}>{confirmation.label}</button></div></>}
+          {confirmation && <><span className="writer-confirm-icon"><WriterIcon kind="save" /></span><h2 id="writer-confirm-title">{confirmation.title}</h2><p id="writer-confirm-description">{confirmation.description}</p><div className="writer-confirm-actions"><button type="button" className="button button-secondary" autoFocus onClick={() => { const action = confirmation.cancelAction; setConfirmation(null); action?.(); }}>{confirmation.cancelLabel ?? "계속 작성하기"}</button><button type="button" className="button button-primary" onClick={() => { const action = confirmation.action; setConfirmation(null); action(); }}>{confirmation.label}</button></div></>}
         </dialog>
       </div>
     </main>

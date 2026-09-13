@@ -123,6 +123,9 @@ def get_user(request):
     return Response({
             'id': user.id,
             'username': user.get_username(),
+            'is_staff': user.is_staff,
+            'is_superuser': user.is_superuser,
+            'is_active': user.is_active,
             'email': getattr(user, 'email', None),
         },
         status=status.HTTP_200_OK,

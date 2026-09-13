@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { setPreviewSignedIn } from "@/lib/member-preview";
 import { FormEvent, useRef, useState } from "react";
 import { AuthDialog } from "@/components/auth-dialog";
 import { useAuthHydrated } from "@/components/auth-hydration";
@@ -8,6 +10,8 @@ import { useAuthHydrated } from "@/components/auth-hydration";
 type LoginErrors = { username?: string; password?: string };
 
 export default function LoginPage() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
   const hydrated = useAuthHydrated();
   const [message, setMessage] = useState("");
   const [errors, setErrors] = useState<LoginErrors>({});
@@ -15,8 +19,9 @@ export default function LoginPage() {
   const [help, setHelp] = useState<"id" | "password" | null>(null);
   const feedbackRef = useRef<HTMLParagraphElement>(null);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     const form = event.currentTarget;
     const fields = new FormData(form);
     const nextErrors: LoginErrors = {};
@@ -28,7 +33,20 @@ export default function LoginPage() {
       form.querySelector<HTMLInputElement>(nextErrors.username ? "#login-id" : "#login-password")?.focus();
       return;
     }
-    setMessage("아직 로그인 서비스를 연결하지 않았어요. 입력한 정보는 전송하거나 저장하지 않았어요.");
+    setBusy(true);
+    try {
+      const response = await fetch("/team-auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: String(fields.get("username") ?? ""), password: String(fields.get("password") ?? "") }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "로그인에 실패했어요.");
+      if (result.mode === "preview") {
+        setPreviewSignedIn(true);
+        router.push("/mypage");
+        return;
+      }
+      window.location.assign(new URLSearchParams(window.location.search).get("next") === "admin" ? "/admin" : "/routes/new");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "로그인 서버에 연결하지 못했어요.");
+    } finally { setBusy(false); }
     requestAnimationFrame(() => feedbackRef.current?.focus());
   }
 
@@ -60,14 +78,14 @@ export default function LoginPage() {
             </div>
             {errors.password && <p className="auth-error" id="login-password-error">{errors.password}</p>}
           </div>
-          <button className="button button-primary auth-submit" type="submit" disabled={!hydrated}>로그인</button>
+          <button className="button button-primary auth-submit" type="submit" disabled={!hydrated || busy}>{busy ? "로그인 중…" : "로그인"}</button>
         </form>
         <nav className="auth-help-links" aria-label="계정 도움말">
           <button type="button" onClick={() => setHelp("id")}>아이디 찾기</button>
           <button type="button" onClick={() => setHelp("password")}>비밀번호 찾기</button>
           <Link href="/signup">회원가입</Link>
         </nav>
-        <p className="auth-service-note auth-bottom-note">회원 서비스 연결 전 미리보기 화면이에요.</p>
+        <p className="auth-service-note auth-bottom-note">팀 계정으로 로그인하면 챗봇을 이용할 수 있어요.</p>
         <Link href="/routes" className="auth-browse">먼저 직관 코스 둘러보기 <span aria-hidden="true">↗</span></Link>
       </section>
       <AuthDialog open={help !== null} title={help === "password" ? "비밀번호 찾기" : "아이디 찾기"} onClose={() => setHelp(null)}>

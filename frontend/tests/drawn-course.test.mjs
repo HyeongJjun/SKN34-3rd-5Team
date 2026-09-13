@@ -84,3 +84,13 @@ test("mixed shop and free point undo follows creation order and protects preexis
     assert.deepEqual(state.stops.map((stop) => stop.placeId), expected);
   }
 });
+
+
+test("undo removes only the latest visit when a place is revisited", () => {
+  const first = { ...cafe, isDrawnPoint: true, visitId: "visit-a" };
+  const second = { ...cafe, isDrawnPoint: true, visitId: "visit-b" };
+  const result = undoDrawnPoint([first, point("middle"), second], ["visit-a", "middle", "visit-b"]);
+  assert.equal(result.removed.visitId, "visit-b");
+  assert.equal(result.stops.length, 2);
+  assert.equal(result.stops[0].visitId, "visit-a");
+});

@@ -26,7 +26,7 @@ function CategoryIcon({ kind }: { kind: PlaceCategory }) {
 function RouteStops({ stops, onChange, onFocus, separateStart = false }: { stops: RouteStop[]; onChange: PlannerProps["onChange"]; onFocus?: (stop: RouteStop) => void; separateStart?: boolean }) {
   return <div className="planner-route-list">
     <div className="planner-route-heading"><strong>내가 고른 방문 순서</strong><span>{stops.length} / {MAX_ROUTE_STOPS}</span></div>
-    {stops.length === 0 ? <div className="planner-empty"><span aria-hidden="true">출발 → 1 → 2</span><strong>첫 번째 지점을 골라보세요</strong><p>빈 지도에 직접 지점을 찍거나<br />장소 정보를 보고 ‘코스에 담기’를 누르세요.</p></div> : <ol>{stops.map((stop, index) => <li key={stop.placeId ?? `${stop.name}:${stop.category}:${stop.lat}:${stop.lng}`}>
+    {stops.length === 0 ? <div className="planner-empty"><span aria-hidden="true">출발 → 1 → 2</span><strong>첫 번째 지점을 골라보세요</strong><p>빈 지도에 직접 지점을 찍거나<br />장소 정보를 보고 ‘코스에 담기’를 누르세요.</p></div> : <ol>{stops.map((stop, index) => <li key={stop.visitId ?? `${stop.placeId ?? stop.name}:${index}`}>
       <span className="planner-stop-number">{coursePointLabel(stops, index, separateStart)}</span>
       <button type="button" className="planner-stop-name" onClick={() => onFocus?.(stop)}><strong>{stop.name}</strong><small>{stop.category}</small></button>
       <div className="planner-stop-actions">
@@ -68,9 +68,16 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
     stopSnapshot.current = numbered;
     onStopsChange(numbered);
   }, [onStopsChange]);
-  const [drawHistory, setDrawHistory] = useState<string[]>(() => stops.filter((stop) => (stop.isMapPoint || stop.isDrawnPoint) && stop.placeId).map((stop) => stop.placeId!));
+  const [drawHistory, setDrawHistory] = useState<string[]>(() => stops.filter((stop) => (stop.isMapPoint || stop.isDrawnPoint) && stop.placeId).map((stop) => stop.visitId ?? stop.placeId!));
   const [courseCompleted, setCourseCompleted] = useState(false);
-  const travel = useCourseDirections(stops, courseCompleted, initialStart);
+  // Draw routes while editing; completion only controls the travel summary.
+  const travel = useCourseDirections(stops, true, initialStart, (point) => {
+    const current = stopSnapshot.current;
+    // An embedded origin is replaced, not retained as a new waypoint.
+    if (initialStart || !(current[0]?.isMapPoint || current[0]?.isDrawnPoint)) return false;
+    onChange([{ ...point, name: "출발지", category: "출발", placeId: "route:origin", isDrawnPoint: true }, ...current.slice(1)]);
+    return true;
+  });
   useEffect(() => { onStartChange(travel.location ?? undefined); }, [travel.location, onStartChange]);
   const canComplete = stops.length > 0 && !travel.picking && !travel.locating && (travel.origin === "first" || Boolean(travel.location));
   const canSaveCourse = canComplete && Boolean(courseName.trim()) && !saving;
@@ -83,7 +90,7 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
   const [viewport, setViewport] = useState(0);
   const [listArea, setListArea] = useState<{ stadium: string; south: number; north: number; west: number; east: number } | null>(null);
   const activeListArea = listArea?.stadium === stadium.code ? listArea : null;
-  const [nearPoint, setNearPoint] = useState<{ stadium: string; lat: number; lng: number } | null>(null);
+  const [nearPoint, setNearPoint] = useState<{ stadium: string; lat: number; lng: number; pointId?: string } | null>(null);
   const activeNearPoint = nearPoint?.stadium === stadium.code ? nearPoint : null;
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [categories, setCategories] = useState<PlaceCategory[]>(() => PLACE_CATEGORIES.map((category) => category.id));
@@ -111,7 +118,7 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
   }, []);
   const hidePreview = useCallback(() => { clearTimeout(hoverTimer.current); hoverTimer.current = setTimeout(() => setHovered(null), 200); }, []);
   useEffect(() => () => clearTimeout(hoverTimer.current), []);
-  const [sideTab, setSideTab] = useState<"places" | "route">("places");
+  const [sideTab, setSideTab] = useState<"places" | "route">(() => stops.length > 0 ? "route" : "places");
   const [progress, setProgress] = useState({ done: false, completed: 0, failures: 0 });
   const [attempt, setAttempt] = useState(0);
   const [listLimit, setListLimit] = useState(30);
@@ -148,6 +155,7 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
       const previous = current.at(-1);
       if (previous && Math.abs(previous.lat - lat) < .000001 && Math.abs(previous.lng - lng) < .000001) return;
       const placeId = `map:${crypto.randomUUID()}`;
+      setNearPoint({ stadium: stadium.code, lat, lng, pointId: placeId });
       onChange([...current, { name: "", category: "직접 지정", lat, lng, placeId, isMapPoint: true }]);
       setDrawHistory((history) => [...history, placeId]);
       setSelected(null); setHovered(null); clearTimeout(hoverTimer.current);
@@ -178,6 +186,41 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
       maps.event.removeListener(map, "dragend", dragEnd);
     };
   }, [map, maps, drawing, travel.picking]);
+
+  function fitCourse() {
+    if (!map || !travel.points.length) return;
+    clearTimeout(hoverTimer.current);
+    setSelected(null); setHovered(null);
+    const points = [...travel.points, ...(travel.data?.legs.flatMap((leg) => leg.paths.flat()) ?? [])];
+    const coordinates = points.map(point => new maps.LatLng(point.lat, point.lng));
+    const element = mapNode.current;
+    if (!element || element.clientWidth < 100 || element.clientHeight < 100) return;
+    map.relayout();
+    const width = element.clientWidth, height = element.clientHeight;
+    const left = 22, right = 22, top = 52, bottom = 24;
+    const bounds = new maps.LatLngBounds();
+    coordinates.forEach(point => bounds.extend(point));
+    map.setBounds(bounds, top, right, bottom, left);
+    // Use actual screen coordinates to find the closest zoom that fits the course.
+    const measure = () => {
+      const projected = coordinates.map(point => map.getProjection().containerPointFromCoords(point));
+      return {
+        minX: Math.min(...projected.map(p => p.x)), maxX: Math.max(...projected.map(p => p.x)),
+        minY: Math.min(...projected.map(p => p.y)), maxY: Math.max(...projected.map(p => p.y)),
+      };
+    };
+    let box = measure();
+    while (map.getLevel() > 1 && (box.maxX - box.minX) * 2 <= width - left - right && (box.maxY - box.minY) * 2 <= height - top - bottom) {
+      const level = map.getLevel();
+      map.setLevel(level - 1);
+      if (map.getLevel() === level) break;
+      box = measure();
+    }
+    map.setCenter(map.getProjection().coordsFromContainerPoint({
+      x: (box.minX + box.maxX) / 2 - (left - right) / 2,
+      y: (box.minY + box.maxY) / 2 - (top - bottom) / 2,
+    }));
+  }
 
   const fitArea = useCallback((target: KakaoMap) => {
     const latDelta = NEARBY_RADIUS / 111195;
@@ -261,16 +304,26 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
   const preview = hovered ?? selected;
   const selectedPlace = places.find((place) => preview && sameStop(place, preview));
   const currentSelection = selectedPlace ?? preview;
-  const addCoursePlace = useCallback((place: RouteStop) => {
+  const replacementIndex = (current: RouteStop[], place: RouteStop) => activeNearPoint?.pointId && distanceMeters(activeNearPoint, place) <= 70 ? current.findIndex(stop => (stop.visitId ?? stop.placeId) === activeNearPoint.pointId) : -1;
+  const addCoursePlace = (place: RouteStop) => {
     const current = stopSnapshot.current;
-    if (current.some((stop) => sameStop(stop, place))) { setNotice("이미 코스에 담은 장소예요."); return; }
-    if (current.length >= MAX_ROUTE_STOPS) { setNotice("코스에는 최대 12개 지점까지 담을 수 있어요."); return; }
-    const stop: RouteStop = { name: place.name, lat: place.lat, lng: place.lng, category: place.category, placeId: place.placeId ?? `place:${crypto.randomUUID()}`, tourContentId: place.tourContentId, address: place.address, ...(drawing ? { isDrawnPoint: true } : {}) };
-    onChange([...current, stop]);
-    if (drawing) setDrawHistory((history) => [...history, stop.placeId!]);
+    const replacing = replacementIndex(current, place);
+    if (replacing >= 0 && [current[replacing - 1], current[replacing + 1]].some(item => item && sameStop(item, place))) { setNotice("바로 앞뒤 지점과 같은 장소예요."); return; }
+    if (replacing < 0 && current.length && sameStop(current[current.length - 1], place)) { setNotice("바로 직전 지점과 같은 장소예요. 다른 장소를 들른 뒤 다시 담을 수 있어요."); return; }
+    if (replacing < 0 && current.length >= MAX_ROUTE_STOPS) { setNotice("코스에는 최대 12개 지점까지 담을 수 있어요."); return; }
+    const stop: RouteStop = { visitId: crypto.randomUUID(), name: place.name, lat: place.lat, lng: place.lng, category: place.category, placeId: place.placeId ?? `place:${crypto.randomUUID()}`, tourContentId: place.tourContentId, address: place.address, ...(drawing ? { isDrawnPoint: true } : {}) };
+    if (replacing >= 0) {
+      const previous = current[replacing];
+      onChange(current.map((item, index) => index === replacing ? { ...stop, isDrawnPoint: Boolean(previous.isMapPoint || previous.isDrawnPoint) } : item));
+      setDrawHistory(history => history.map(id => id === (previous.visitId ?? previous.placeId) ? stop.visitId! : id));
+      setNearPoint(null);
+    } else {
+      onChange([...current, stop]);
+      if (drawing) setDrawHistory((history) => [...history, stop.visitId!]);
+    }
     clearTimeout(hoverTimer.current); setHovered(null); setSelected(place); setSideTab("route");
-    setNotice(`${place.name}을(를) 코스에 담았어요.`);
-  }, [drawing, onChange]);
+    setNotice(replacing >= 0 ? `찍은 지점을 ${place.name}(으)로 변경했어요.` : `${place.name}을(를) 코스에 담았어요.`);
+  };
   const selectPlace = useCallback((place: RouteStop) => {
     clearTimeout(hoverTimer.current); setHovered(null);
     setSelected(place);
@@ -338,7 +391,13 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
       button.onmouseleave = hidePreview;
       button.onfocus = () => showPreview(place);
       button.onblur = hidePreview;
-      button.onclick = (event) => { event.stopPropagation(); maps.event.preventMap(); if (drawing) { setSelected(place); setNotice("이미 코스에 담은 지점이에요."); } else selectPlace(place); };
+      button.onclick = (event) => {
+        event.stopPropagation(); maps.event.preventMap();
+        clearTimeout(hoverTimer.current); setHovered(null); setSelected(null);
+        setNearPoint({ stadium: stadium.code, lat: stop.lat, lng: stop.lng, pointId: stop.visitId ?? stop.placeId });
+        setListArea(null); setListLimit(30); setSideTab("places");
+        setNotice(`주변 장소를 선택하면 ${coursePointLabel(stops, index, separateStart)}번 지점을 변경해요.`);
+      };
       button.oncontextmenu = (event) => { if (drawing) { event.preventDefault(); event.stopPropagation(); maps.event.preventMap(); undoPoint(); } };
       overlay(button, stop.lat, stop.lng, 12, stop.isMapPoint || stop.isDrawnPoint ? 1 : .5);
     }
@@ -356,7 +415,8 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
   function addStop() {
     if (currentSelection) addCoursePlace(currentSelection);
   }
-  const alreadyAdded = currentSelection && stops.some((stop) => sameStop(stop, currentSelection));
+  const canReplacePoint = Boolean(currentSelection && replacementIndex(stops, currentSelection) >= 0);
+  const alreadyAdded = currentSelection && stops.length > 0 && sameStop(stops[stops.length - 1], currentSelection);
 
   return <div className="nearby-planner">
     <div ref={filtersNode} className="planner-filters" aria-label="장소 카테고리" onKeyDown={(event) => { if (event.key === "Escape") { setOpenCategory(null); filtersNode.current?.querySelector<HTMLButtonElement>(`[data-category-arrow="${openCategory}"]`)?.focus(); } }}>
@@ -389,13 +449,16 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
       })}
     </div>
     <div className="planner-drawing-toolbar">
-      <span id="drawing-help">빈 곳 클릭: 지점 추가 · 장소 핀 클릭: 정보 확인 후 코스에 담기 · 우클릭: 마지막 지점 되돌리기</span><button type="button" className="planner-draw-undo" disabled={!canComplete} onClick={() => { setCourseCompleted(true); setSideTab("route"); }}>코스 완성</button><button type="button" className="planner-draw-undo" disabled={stops.length === 0 && !travel.location && !travel.picking && !travel.locating} onClick={resetCourse}><span aria-hidden="true">↶ </span>초기화</button>
+      <span id="drawing-help">빈 곳 클릭: 지점 추가 · 장소 핀 클릭: 정보 확인 후 코스에 담기 · 우클릭: 마지막 지점 되돌리기</span><button type="button" className="planner-draw-undo" disabled={!canComplete} onClick={() => { setCourseCompleted(true); setSideTab("route"); fitCourse(); }}>코스 완성</button><button type="button" className="planner-draw-undo" disabled={stops.length === 0 && !travel.location && !travel.picking && !travel.locating} onClick={resetCourse}><span aria-hidden="true">↶ </span>초기화</button>
     </div>
     <div className="planner-workspace">
       <div className={`planner-map-stage${travel.picking ? " is-picking-start" : ""}${drawing ? " is-drawing-course" : ""}`}>
         {travel.picking && <div className="course-pick-hint">지도를 눌러 출발 위치를 지정하세요 <button type="button" onClick={travel.cancelPicking}>취소</button></div>}
         <div ref={mapNode} className="planner-map-canvas" aria-label={`${stadium.name} 주변 장소 지도`} aria-describedby={drawing ? "drawing-help" : undefined} />
-        <button type="button" className="planner-current-area" disabled={!map} onClick={showCurrentArea}>지금 지도에서 보기</button>
+        <div className="planner-map-view-actions">
+          <button type="button" className="planner-current-area" disabled={!map} onClick={showCurrentArea}>지금 지도에서 보기</button>
+          <button type="button" className="planner-fit-course" aria-label="코스 전체 보기" title="코스 전체 보기" disabled={!map || !travel.points.length} onClick={fitCourse}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" /><path d="m9 15 3-6 3 6" /></svg></button>
+        </div>
         <div className="planner-map-controls"><button type="button" title="구장 주변 전체 보기" aria-label="구장 주변 전체 보기" onClick={() => map && fitArea(map)}>⌖</button><button type="button" aria-label="지도 확대" onClick={() => map && map.setLevel(Math.max(1, map.getLevel() - 1))}>+</button><button type="button" aria-label="지도 축소" onClick={() => map && map.setLevel(Math.min(10, map.getLevel() + 1))}>−</button></div>
         {currentSelection && <section className="planner-place-card" aria-label="선택한 장소" onMouseEnter={holdPreview} onMouseLeave={hidePreview}>
           <button type="button" className="planner-card-close" aria-label="장소 상세 닫기" onClick={() => { clearTimeout(hoverTimer.current); setSelected(null); setHovered(null); }}>×</button>
@@ -403,7 +466,7 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
           {currentSelection.tourContentId && <span className="planner-source-badge">{currentSelection.placeId?.startsWith("tour:") ? "한국관광공사" : "카카오 · 한국관광공사"}</span>}
           <p>{currentSelection.address || "주소 정보가 없는 장소예요."}</p>
           {selectedPlace?.phone && <p>{selectedPlace.phone}</p>}
-          <div className="planner-card-actions"><a href={placeLink(currentSelection)} target="_blank" rel="noreferrer">{currentSelection.placeId && /^\d+$/.test(currentSelection.placeId) ? "카카오맵 상세 ↗" : "카카오맵 위치 보기 ↗"}</a><button type="button" disabled={Boolean(alreadyAdded) || stops.length >= MAX_ROUTE_STOPS} onClick={addStop}>{alreadyAdded ? "✓ 코스에 담았어요" : stops.length >= MAX_ROUTE_STOPS ? "최대 12곳까지" : "+ 코스에 담기"}</button></div>
+          <div className="planner-card-actions"><a href={placeLink(currentSelection)} target="_blank" rel="noreferrer">{currentSelection.placeId && /^\d+$/.test(currentSelection.placeId) ? "카카오맵 상세 ↗" : "카카오맵 위치 보기 ↗"}</a><button type="button" disabled={Boolean(alreadyAdded) || (!canReplacePoint && stops.length >= MAX_ROUTE_STOPS)} onClick={addStop}>{alreadyAdded ? "바로 직전 지점이에요" : canReplacePoint ? "이 지점으로 지정" : stops.length >= MAX_ROUTE_STOPS ? "최대 12곳까지" : "+ 코스에 담기"}</button></div>
         </section>}
       </div>
       <aside className="planner-side">
@@ -415,13 +478,7 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
             <button type="button" className="course-save-button" disabled={!canSaveCourse} onClick={() => void onSaveCourse()}>{saving ? "저장 중…" : "코스 저장"}</button>
             <small>이 브라우저에 저장돼요.</small>
             {saveError && <p role="alert" className="course-save-error">{saveError}</p>}
-          </div> : undefined} onFit={() => {
-            if (!map) return;
-            const bounds = new maps.LatLngBounds();
-            const points = [...travel.points, ...(travel.data?.legs.flatMap((leg) => leg.paths.flat()) ?? [])];
-            points.forEach((point) => bounds.extend(new maps.LatLng(point.lat, point.lng)));
-            if (points.length) map.setBounds(bounds, 40, 30, 40, 30);
-          }} /><RouteStops stops={stops} onChange={onChange} separateStart={separateStart} onFocus={(stop) => selectPlace(places.find((p) => sameStop(stop, p)) ?? stop)} /></> : <>
+          </div> : undefined} onFit={fitCourse} /><RouteStops stops={stops} onChange={onChange} separateStart={separateStart} onFocus={(stop) => selectPlace(places.find((p) => sameStop(stop, p)) ?? stop)} /></> : <>
             <label className="planner-search"><span className="sr-only">불러온 장소에서 찾기</span><input type="search" value={query} placeholder="불러온 장소에서 찾기" onChange={(event) => { setQuery(event.target.value); setListLimit(30); }} onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} /></label>
             <div className="planner-list-caption"><span>{activeNearPoint ? "찍은 지점에서 가까운 순 · 직선거리" : "구장에서 가까운 순 · 직선거리"}{activeNearPoint && <small>찍은 지점 반경 70m 내 시설</small>}{activeListArea && <small>선택한 지도 범위 내 장소</small>}</span><button type="button" disabled={!activeListArea && !activeNearPoint} title="지도 범위 해제" aria-label="지도 범위 해제" onClick={() => { setListArea(null); setNearPoint(null); setListLimit(30); }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6" /></svg></button></div>
             {listedPlaces.length === 0 ? <div className="planner-empty"><strong>{loading ? "주변 장소를 찾고 있어요" : "조건에 맞는 장소가 없어요"}</strong><p>{loading ? "조회되는 장소부터 차례로 표시할게요." : activeNearPoint ? "이 지점의 70m 안에는 현재 조건에 맞는 시설이 없어요. 다른 지점을 누르거나 범위를 해제해 보세요." : activeListArea ? "다른 위치에서 ‘지금 지도에서 보기’를 누르거나 지도 범위를 해제해 보세요." : "다른 카테고리나 검색어로 살펴보세요."}</p></div> : <ul className="planner-place-list">{[...listedPlaces].sort((a, b) => activeNearPoint ? distanceMeters(activeNearPoint, a) - distanceMeters(activeNearPoint, b) : a.distance - b.distance).slice(0, listLimit).map((place) => <li key={place.placeId}><button type="button" aria-pressed={Boolean(selected && sameStop(place, selected))} onClick={() => selectPlace(place)}>

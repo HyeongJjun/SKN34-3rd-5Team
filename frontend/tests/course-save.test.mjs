@@ -6,6 +6,11 @@ import ts from "typescript";
 
 const source = readFileSync(new URL("../lib/routes.ts", import.meta.url), "utf8");
 const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } });
+const require = createRequire(import.meta.url);
+const examples = { exports: {} };
+const examplesSource = readFileSync(new URL("../lib/additional-route-examples.ts", import.meta.url), "utf8");
+new Function("module", "exports", ts.transpileModule(examplesSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(examples, examples.exports);
+const requireRouteDependency = name => name === "./additional-route-examples" ? examples.exports : require(name);
 
 function storageHarness() {
   const storage = new Map();
@@ -18,7 +23,7 @@ function storageHarness() {
     dispatchEvent() {},
   };
   const testModule = { exports: {} };
-  new Function("require", "module", "exports", "window", outputText)(createRequire(import.meta.url), testModule, testModule.exports, browser);
+  new Function("require", "module", "exports", "window", outputText)(requireRouteDependency, testModule, testModule.exports, browser);
   return { ...testModule.exports, block: () => { blocked = true; } };
 }
 

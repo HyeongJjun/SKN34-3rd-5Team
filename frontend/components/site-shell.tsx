@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MemberHeaderActions } from "./member-header-actions";
 import { HeaderMenu } from "./header-menu";
 
 export function SiteHeader() {
@@ -8,8 +9,7 @@ export function SiteHeader() {
         <Link href="/" aria-label="KBO ROUTE 홈" className="brand">KBO<span className="brand-dot" /></Link>
         <div className="header-actions">
           <HeaderMenu />
-          <Link className="login-link" href="/login">로그인</Link>
-          <Link className="button button-primary header-signup" href="/signup">회원가입</Link>
+          <MemberHeaderActions />
         </div>
       </div>
     </header>

@@ -170,3 +170,24 @@
 .planner-drawn-pin > span { position: relative; display: grid; place-items: center; height: 36px; color: white; font-size: 12px; font-weight: 800; line-height: 1; }
 .planner-drawn-pin:hover::before, .planner-drawn-pin.is-focused::before { background: #164bab; }
 .is-picking-start .planner-drawn-pin { pointer-events: none; }
+
+/* Keep the course map and assistant visible together on desktop. */
+@media (min-width: 1200px) {
+  .writer-page > .container { max-width: 1600px; }
+  .writer-layout { grid-template-columns: minmax(0, 1fr) 340px; grid-template-areas: "planner chat" "writing chat"; gap: 24px; }
+  .writer-chat-panel { top: 92px; height: clamp(540px, calc(100dvh - 120px), 820px); }
+  .writer-planner-panel { padding: 20px; }
+  .planner-heading-row { gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  .planner-stadium-field { min-width: 200px; }
+}
+@media (min-width: 1600px) {
+  .writer-layout { grid-template-columns: minmax(0, 1fr) 380px; }
+}
+
+.planner-map-view-actions { position: absolute; z-index: 15; top: 16px; left: 16px; display: flex; align-items: center; gap: 7px; }
+.planner-map-view-actions .planner-current-area { position: static; }
+.planner-fit-course { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid #d4e2f7; border-radius: 7px; background: #fff; color: #386dcc; box-shadow: 0 2px 9px #29497820; cursor: pointer; }
+.planner-fit-course:hover:not(:disabled) { background: #edf4ff; }
+.planner-fit-course:disabled { opacity: .5; cursor: default; }
+.planner-fit-course:focus-visible { outline: 2px solid #246bf3; outline-offset: 3px; }
+@media (max-width: 767px) { .planner-map-view-actions { top: 10px; left: 10px; } }

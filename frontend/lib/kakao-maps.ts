@@ -8,7 +8,7 @@ export type KakaoMap = {
   getBounds(): { getSouthWest(): MapCoordinate; getNorthEast(): MapCoordinate };
   setLevel(level: number): void;
   setCursor(cursor: string): void;
-  getProjection(): { containerPointFromCoords(point: MapCoordinate): { x: number; y: number } };
+  getProjection(): { containerPointFromCoords(point: MapCoordinate): { x: number; y: number }; coordsFromContainerPoint(point: { x: number; y: number }): MapCoordinate };
   setCenter(point: MapCoordinate): void;
   setBounds(bounds: Bounds, top?: number, right?: number, bottom?: number, left?: number): void;
   relayout(): void;

@@ -1,3 +1,4 @@
+from .admin_views import MemberList, MemberRole
 from django.urls import path
 from rest_framework_simplejwt.views import (
     TokenBlacklistView,
@@ -19,6 +20,8 @@ from .views import change_password, set_password, signup, get_user
     POST /api/auth/logout
 """
 urlpatterns = [
+    path("admin/members/", MemberList.as_view(), name="admin_members"),
+    path("admin/members/<int:pk>/role/", MemberRole.as_view(), name="admin_member_role"),
     path("signin", TokenObtainPairView.as_view(), name="login"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("signup/", signup, name="signup"),
