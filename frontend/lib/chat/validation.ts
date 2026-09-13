@@ -39,6 +39,7 @@ export function parseChatRequest(value: unknown): ChatRequest {
       context.intent = value.context.intent as ChatContext["intent"];
     }
   }
+  if (value.sessionId !== undefined && (!Number.isSafeInteger(value.sessionId) || Number(value.sessionId) < 1)) throw new ChatError("채팅방 번호를 확인해 주세요.");
   // Only the documented fields reach a provider; client-supplied model/system settings are discarded.
-  return { messages, ...(context ? { context } : {}) };
+  return { messages, ...(value.sessionId !== undefined ? { sessionId: value.sessionId as number } : {}), ...(context ? { context } : {}) };
 }
