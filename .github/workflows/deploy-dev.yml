@@ -46,7 +46,7 @@ jobs:
         run: npm run build
 
   # 2. CD 배포 (develop 브랜치 push/merge 시 실행)
-    cd-deploy:
+  cd-deploy:
     needs: ci-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
@@ -65,7 +65,7 @@ jobs:
             docker compose up -d --no-deps --force-recreate nginx
             docker compose exec -T nginx nginx -t
 
-  # 3. Discord 알림
+  # 3. Discord 알림!
   notify-discord:
     needs: [ci-test, cd-deploy]
     if: always()
