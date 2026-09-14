@@ -2,7 +2,7 @@ import { MAX_HISTORY_MESSAGES, MAX_MESSAGE_LENGTH, MAX_REPLY_LENGTH } from "./ty
 import type { ChatContext, ChatMessage, ChatRequest } from "./types";
 
 export class ChatError extends Error {
-  constructor(message: string, public status = 400) { super(message); }
+  constructor(message: string, public status = 400, public fields?: Record<string, string[]>) { super(message); }
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
