@@ -2,10 +2,9 @@
 import Image from "next/image";
 import { useRef, useState } from "react";
 import { prepareProfileImage } from "@/lib/profile-image";
-import { updatePreviewAvatar } from "@/lib/member-preview";
 import styles from "@/app/mypage/page.module.css";
 
-export function ProfilePhotoEditor({ avatar }: { avatar: string }) {
+export function ProfilePhotoEditor({ avatar, onSaved }: { avatar: string; onSaved: (avatar: string) => Promise<void> | void }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -28,9 +27,10 @@ export function ProfilePhotoEditor({ avatar }: { avatar: string }) {
       <div className={styles.photoButtons}>
         <button type="button" className="button button-secondary" disabled={busy} onClick={() => input.current?.click()}>{busy ? "사진 처리 중…" : "사진 선택"}</button>
         {photo && <button type="button" className="button button-secondary" disabled={busy} onClick={() => { setDraft(""); setMessage(""); }}>기본 이미지로</button>}
-        {draft !== null && <><button type="button" className="button button-primary" disabled={busy} onClick={() => {
-          try { updatePreviewAvatar(draft); setDraft(null); setMessage("프로필 사진을 저장했어요."); }
+        {draft !== null && <><button type="button" className="button button-primary" disabled={busy} onClick={async () => {
+          try { setBusy(true); await onSaved(draft); setDraft(null); setMessage("프로필 사진을 저장했어요."); }
           catch (error) { setMessage(error instanceof Error ? error.message : "사진을 저장하지 못했어요."); }
+          finally { setBusy(false); }
         }}>사진 저장</button><button type="button" className="button button-secondary" disabled={busy} onClick={() => { setDraft(null); setMessage(""); }}>취소</button></>}
       </div>
       {draft !== null && <p>미리보기를 확인한 뒤 사진 저장을 눌러 주세요.</p>}
