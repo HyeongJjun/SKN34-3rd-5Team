@@ -9,10 +9,12 @@ import type { RouteStop, TripRoute } from "@/lib/routes";
 import { coursePointLabel, renumberMapPoints, undoDrawnPoint } from "@/lib/drawn-course";
 import { CourseTravelPanel, useCourseDirections, useTravelOverlay } from "./course-travel";
 import type { TourResult } from "@/lib/tour-places";
+import type { TravelMode } from "@/lib/course-directions";
 
 type PlannerProps = {
   stadium: NearbyStadium; stops: RouteStop[]; onChange: (stops: RouteStop[]) => void;
   initialStart?: TripRoute["start"]; onStartChange: (start: TripRoute["start"]) => void;
+  initialTravelMode?: TravelMode; onTravelModeChange?: (mode: TravelMode) => void;
   courseName: string; onCourseNameChange: (name: string) => void;
   onSaveCourse: () => Promise<void>; saving: boolean; saveError: string;
 };
@@ -60,7 +62,7 @@ export function NearbyRoutePlanner(props: PlannerProps) {
   </div>;
 }
 
-function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialStart, onStartChange, courseName, onCourseNameChange, onSaveCourse, saving, saveError }: PlannerProps & { maps: KakaoMaps }) {
+function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialStart, onStartChange, initialTravelMode, onTravelModeChange, courseName, onCourseNameChange, onSaveCourse, saving, saveError }: PlannerProps & { maps: KakaoMaps }) {
   const stopSnapshot = useRef(stops);
   useLayoutEffect(() => { stopSnapshot.current = stops; }, [stops]);
   const onChange = useCallback((next: RouteStop[]) => {
@@ -77,7 +79,7 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
     if (initialStart || !(current[0]?.isMapPoint || current[0]?.isDrawnPoint)) return false;
     onChange([{ ...point, name: "출발지", category: "출발", placeId: "route:origin", isDrawnPoint: true }, ...current.slice(1)]);
     return true;
-  });
+  }, initialTravelMode, onTravelModeChange);
   useEffect(() => { onStartChange(travel.location ?? undefined); }, [travel.location, onStartChange]);
   const canComplete = stops.length > 0 && !travel.picking && !travel.locating && (travel.origin === "first" || Boolean(travel.location));
   const canSaveCourse = canComplete && Boolean(courseName.trim()) && !saving;
