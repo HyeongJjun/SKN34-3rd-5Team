@@ -19,6 +19,7 @@ from django.urls import path, include
 from llm.views import ChatMessageView, ChatRoomDetailView, ChatRoomView
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("", include("travel.urls")),
     path("chat/sessions/", ChatRoomView.as_view()),
 
     path(

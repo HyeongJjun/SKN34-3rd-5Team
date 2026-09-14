@@ -49,7 +49,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django.contrib.postgres',
     'llm',
-    'accounts'
+    'accounts',
+    'travel',
 ]
 
 MIDDLEWARE = [
@@ -164,9 +165,13 @@ MAILERS = {
 
 
 REST_FRAMEWORK = {
+    'NUM_PROXIES': 1,
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ]
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'course_write': '30/hour',
+    },
 }
 
 
