@@ -225,3 +225,7 @@ frontend/.env.local
 
 # Development member credential hashes
 frontend/.member-preview/
+
+# Mailpit runtime data
+/data/mailpit/
+/graphify-out/*
