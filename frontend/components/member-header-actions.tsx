@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMemberAuth } from "@/lib/member-auth";
+import { logoutMember, memberError } from "@/lib/member-auth-request";
 export function MemberHeaderActions() {
   const { status, user, setUser } = useMemberAuth();
   const router = useRouter();
@@ -27,7 +28,7 @@ export function MemberHeaderActions() {
         <hr className="member-menu-divider" />
         <Link href="/mypage?tab=profile" onClick={() => setOpen(false)}>회원 정보</Link>
         <hr className="member-menu-divider" />
-        <button type="button" onClick={async () => { setOpen(false); setError(""); try { const response = await fetch("/team-auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); const result = await response.json(); setUser(null); router.push("/"); if (!response.ok) setError(result.warning ?? result.error ?? "서버의 로그아웃 여부를 확인하지 못했어요."); } catch { setUser(null); router.push("/"); setError("서버의 로그아웃 여부를 확인하지 못했어요."); } }}>로그아웃</button>
+        <button type="button" onClick={async () => { setOpen(false); setError(""); try { const response = await logoutMember(); const result = await response.json().catch(() => ({})); setUser(null); router.push("/"); if (!response.ok && response.status !== 401) setError(memberError(result, "서버의 로그아웃 여부를 확인하지 못했어요.")); } catch { setUser(null); router.push("/"); setError("서버의 로그아웃 여부를 확인하지 못했어요."); } }}>로그아웃</button>
       </nav>}
     </div></> : <><Link className="login-link" href="/login">로그인</Link><Link className="button button-primary header-signup" href="/signup">회원가입</Link>{status === "unavailable" && <span role="status">회원 서버 확인 필요</span>}</>}
     {error && <span role="alert">{error}</span>}

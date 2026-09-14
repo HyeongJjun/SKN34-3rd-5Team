@@ -8,14 +8,15 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useMemberAuth, type MemberUser } from "@/lib/member-auth";
 import { teamBoards } from "@/lib/team-community";
 import { nextNicknameChangeAt } from "@/lib/member-policy";
+import { memberError, memberFetch } from "@/lib/member-auth-request";
 import styles from "./page.module.css";
 
 async function patchUser(payload: Record<string, unknown>, signal = AbortSignal.timeout(15000)): Promise<MemberUser> {
   let response: Response;
-  try { response = await fetch("/team-auth/user", { method: "PATCH", headers: { "Content-Type": "application/json" }, signal, body: JSON.stringify(payload) }); }
+  try { response = await memberFetch("/api/auth/user", { method: "PATCH", headers: { "Content-Type": "application/json" }, signal, body: JSON.stringify(payload) }); }
   catch (error) { throw new Error(error instanceof DOMException && error.name === "TimeoutError" ? "요청 결과를 확인하지 못했어요. 새로고침해 저장 상태를 확인해 주세요." : "회원 서버에 연결하지 못했어요."); }
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error ?? "회원 정보를 저장하지 못했어요.");
+  if (!response.ok) throw new Error(memberError(result, "회원 정보를 저장하지 못했어요."));
   return result;
 }
 

@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { setPreviewSignedIn } from "@/lib/member-preview";
+import { memberError, saveMemberTokens } from "@/lib/member-auth-request";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { AuthDialog } from "@/components/auth-dialog";
 import { useAuthHydrated } from "@/components/auth-hydration";
@@ -10,7 +9,6 @@ import { useAuthHydrated } from "@/components/auth-hydration";
 type LoginErrors = { username?: string; password?: string };
 
 export default function LoginPage() {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const hydrated = useAuthHydrated();
   const [message, setMessage] = useState("");
@@ -40,15 +38,15 @@ export default function LoginPage() {
   async function submitHelp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (helpBusy || !help) return;
     const form = event.currentTarget, values = new FormData(form);
-    const url = help === "id" ? "/team-auth/username/request" : help === "password" ? "/team-auth/password/request" : "/team-auth/password/reset";
+    const url = help === "id" ? "/api/auth/username/request" : help === "password" ? "/api/auth/password/request" : "/api/auth/password";
     const newPassword = String(values.get("newPassword") ?? ""), confirmation = String(values.get("confirmPassword") ?? "");
     const body = help === "reset" ? { ...reset, new_password: newPassword, new_password_confirm: confirmation } : { email: String(values.get("email") ?? "").trim() };
     if (help === "reset" && newPassword !== confirmation) { setHelpMessage("새 비밀번호 확인이 일치하지 않아요."); return; }
     setHelpBusy(true); setHelpMessage("");
     try {
       const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(40000), body: JSON.stringify(body) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "요청을 처리하지 못했어요.");
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(memberError(result, "요청을 처리하지 못했어요."));
       if (help === "reset") { history.replaceState(null, "", "/login"); setReset(null); setHelp(null); setMessage("비밀번호를 재설정했어요. 새 비밀번호로 로그인해 주세요."); }
       else setHelpMessage(help === "id" ? "계정이 확인되면 가입 이메일로 아이디를 보냈어요." : "계정이 확인되면 가입 이메일로 재설정 링크를 보냈어요.");
     } catch (error) { setHelpMessage(error instanceof DOMException && error.name === "TimeoutError" ? "요청 결과를 확인하지 못했어요. 메일함을 확인한 뒤 다시 요청해 주세요." : error instanceof Error ? error.message : "서버에 연결하지 못했어요."); }
@@ -71,14 +69,10 @@ export default function LoginPage() {
     }
     setBusy(true);
     try {
-      const response = await fetch("/team-auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: String(fields.get("username") ?? ""), password: String(fields.get("password") ?? "") }) });
+      const response = await fetch("/api/auth/signin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: String(fields.get("username") ?? ""), password: String(fields.get("password") ?? "") }) });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "로그인에 실패했어요.");
-      if (result.mode === "preview") {
-        setPreviewSignedIn(true);
-        router.push("/mypage");
-        return;
-      }
+      if (!response.ok || typeof result.access !== "string" || typeof result.refresh !== "string") throw new Error(memberError(result, "로그인에 실패했어요."));
+      saveMemberTokens(result.access, result.refresh);
       window.location.assign(new URLSearchParams(window.location.search).get("next") === "admin" ? "/admin" : "/routes/new");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "로그인 서버에 연결하지 못했어요.");

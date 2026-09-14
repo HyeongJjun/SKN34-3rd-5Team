@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { useMemberAuth, type MemberUser } from "@/lib/member-auth";
-import { normalizeMemberEmail } from "@/lib/member-auth-request";
+import { clearMemberTokens, memberError, memberFetch, normalizeMemberEmail } from "@/lib/member-auth-request";
 import styles from "@/app/mypage/page.module.css";
 
 export function MemberAccountSettings({ user, onChanged }: { user: MemberUser; onChanged: (user: MemberUser) => void }) {
@@ -45,9 +45,10 @@ export function PasswordChangeButton() {
       if (newPassword !== values.get("confirmPassword")) { setPasswordMessage("새 비밀번호 확인이 일치하지 않아요."); return; }
       setBusy(true); setPasswordMessage("");
       try {
-        const response = await fetch("/team-auth/password", { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(15000), body: JSON.stringify({ current_password: currentPassword, new_password: newPassword, new_password_confirm: String(values.get("confirmPassword") ?? "") }) });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error ?? "비밀번호를 변경하지 못했어요.");
+        const response = await memberFetch("/api/auth/password", { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(15000), body: JSON.stringify({ current_password: currentPassword, new_password: newPassword, new_password_confirm: String(values.get("confirmPassword") ?? "") }) });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(memberError(result, "비밀번호를 변경하지 못했어요."));
+        clearMemberTokens();
         setUser(null); form.reset(); setPasswordMessage("비밀번호를 변경했어요. 다시 로그인해 주세요.");
         window.setTimeout(() => router.push("/login"), 500);
       } catch (error) { setPasswordMessage(error instanceof Error ? error.message : "비밀번호를 변경하지 못했어요."); }
@@ -80,9 +81,9 @@ function EmailChangeButton({ user, onChanged }: { user: MemberUser; onChanged: (
     setBusy(true); setMessage("");
     if (action === "send") { setRequestId(null); setCode(""); }
     try {
-      const response = await fetch(action === "send" ? "/team-auth/email/request" : "/team-auth/email/verify", { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(15000), body: JSON.stringify(action === "send" ? { email: normalizedAddress } : { request_id: requestId, code }) });
+      const response = await memberFetch(action === "send" ? "/api/auth/email/request" : "/api/auth/email/verify", { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(15000), body: JSON.stringify(action === "send" ? { email: normalizedAddress } : { request_id: requestId, code }) });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "이메일 인증을 진행하지 못했어요.");
+      if (!response.ok) throw new Error(memberError(result, "이메일 인증을 진행하지 못했어요."));
       if (action === "send") {
         if (typeof result.request_id !== "string" || !result.request_id) throw new Error("인증 요청을 확인하지 못했어요.");
         setRequestId(result.request_id); setMessage("새 이메일로 인증 코드를 보냈어요. 받은 코드를 입력해 주세요.");

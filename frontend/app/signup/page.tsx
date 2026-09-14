@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { AuthDialog } from "@/components/auth-dialog";
 import { useAuthHydrated } from "@/components/auth-hydration";
+import { memberError } from "@/lib/member-auth-request";
 
 type FieldName = "username" | "password" | "passwordConfirm" | "name" | "birthDate" | "gender" | "email";
 type SignupValues = Record<FieldName, string>;
@@ -83,13 +84,13 @@ export default function SignupPage() {
     if (!requiredAgreed) return;
     setBusy(true); setMessage("");
     try {
-      const response = await fetch("/team-auth/signup", { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(40000), body: JSON.stringify({ username: values.username, password: values.password, passwordConfirm: values.passwordConfirm, first_name: values.name.trim(), birth_date: values.birthDate, gender: values.gender, email: values.email.trim() }) });
-      const result = await response.json();
+      const response = await fetch("/api/auth/signup/", { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(40000), body: JSON.stringify({ username: values.username, password: values.password, re_password: values.passwordConfirm, first_name: values.name.trim(), birth_date: values.birthDate, gender: values.gender, email: values.email.trim() }) });
+      const result = response.status === 201 ? null : await response.json();
       if (!response.ok) {
         const mapping: Record<string, FieldName> = { username: "username", password: "password", re_password: "passwordConfirm", first_name: "name", birth_date: "birthDate", gender: "gender", email: "email" };
-        const first = Object.keys(result.fields ?? {}).map(field => mapping[field]).find(Boolean);
+        const first = Object.keys(result ?? {}).map(field => mapping[field]).find(Boolean);
         if (first) { setTouched(current => ({ ...current, [first]: true })); document.getElementById(fieldIds[first])?.focus(); }
-        throw new Error(result.error ?? "회원가입 정보를 확인해 주세요.");
+        throw new Error(memberError(result, "회원가입 정보를 확인해 주세요."));
       }
       router.push("/login?registered=1");
       return;
