@@ -14,6 +14,8 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from accounts.auth_service import AuthService
+
 
 @override_settings(
     MAILERS={
@@ -68,6 +70,23 @@ class JWTPasswordRegressionTest(APITestCase):
         params = urlparse("http" + link).fragment
         query = parse_qs(params)
         return query["uid"][0], query["token"][0]
+
+    def test_reset_email_uses_configured_origin_and_dynamic_credentials(self):
+        for origin in ("http://127.0.0.1:80", "https://public.example.test"):
+            with self.subTest(origin=origin), override_settings(
+                AUTH_FRONTEND_ORIGIN=origin
+            ):
+                mail.outbox.clear()
+                AuthService.send_reset_email(self.user.email)
+                link = mail.outbox[0].body.split(": http", 1)[1].strip()
+                query = parse_qs(urlparse("http" + link).fragment)
+                uid, token = query["uid"][0], query["token"][0]
+
+                self.assertIn(
+                    f"{origin}/login#uid={uid}&token={token}", mail.outbox[0].body
+                )
+                self.assertEqual(uid, urlsafe_base64_encode(force_bytes(self.user.pk)))
+                self.assertTrue(default_token_generator.check_token(self.user, token))
 
     def change(self, fields, access=None, uid=None, token=None):
         url = reverse("password_reset")
