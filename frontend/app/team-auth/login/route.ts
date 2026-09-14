@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     }
     const tokens = await teamRequest("auth/signin", { username: data.username.trim(), password: data.password }, false);
     if (!isRecord(tokens) || typeof tokens.access !== "string" || typeof tokens.refresh !== "string") throw new ChatError("로그인 응답을 확인하지 못했어요.", 502);
-    await saveTokens(tokens.access, tokens.refresh);
+    await saveTokens(tokens.access, tokens.refresh, true);
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ error: error instanceof ChatError ? error.message : "로그인에 실패했어요." }, { status: error instanceof ChatError ? error.status : 502, headers: { "Cache-Control": "no-store" } });
