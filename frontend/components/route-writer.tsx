@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { ChatPopup } from "@/components/chat-popup";
 import Editor from "@/components/editor";
@@ -10,10 +10,8 @@ import { NearbyRoutePlanner } from "@/components/nearby-route-planner";
 import { stadiums } from "@/lib/stadiums";
 import { routeContentToText, type RouteContentFormat } from "@/lib/route-content";
 import { useChat } from "@/components/chat-provider";
-import { saveRoute, useRoutes, type RouteStop, type TripRoute } from "@/lib/routes";
+import { retryRoutes, saveRoute, useRoutes, useRoutesError, useRoutesReady, type RouteStop, type TripRoute } from "@/lib/routes";
 import { withCourseStart } from "@/lib/drawn-course";
-
-const subscribeToHydration = () => () => {};
 
 function WriterIcon({ kind }: { kind: "spark" | "pin" | "arrow" | "save" }) {
   return (
@@ -48,12 +46,14 @@ const writerDrafts = new Map<string, WriterDraft>();
 
 export default function RouteWriter({ editId, copyId, initialStadium }: { editId?: string; copyId?: string; initialStadium?: string }) {
   const routes = useRoutes();
-  const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
+  const ready = useRoutesReady();
+  const loadError = useRoutesError();
   const sourceId = copyId ?? editId;
-  const existing = sourceId ? routes.find((route) => route.id === sourceId) : undefined;
-  if (sourceId && !hydrated) return <main className="container writer-empty"><p role="status"><span className="writer-spinner" aria-hidden="true" />저장된 루트를 불러오고 있어요.</p></main>;
-  if (sourceId && !existing) return <main className="container writer-empty"><span className="eyebrow">MY ROUTE</span><h1>저장된 루트를 찾을 수 없어요</h1><p>이 기기에 저장된 루트인지 확인하거나 새로운 루트를 만들어보세요.</p><Link href="/routes" className="button button-secondary">루트 목록으로</Link></main>;
-  return <WriterForm key={`${copyId ? "copy:" : "edit:"}${existing?.id ?? initialStadium ?? "new"}`} copying={Boolean(copyId)} existing={existing} initialStadium={initialStadium} />;
+  const existing = sourceId ? routes.find((route) => route.id === sourceId || route.legacySourceId === sourceId) : undefined;
+  if (sourceId && !ready) return <main className="container writer-empty"><p role="status"><span className="writer-spinner" aria-hidden="true" />저장된 루트를 불러오고 있어요.</p></main>;
+  if (sourceId && !existing && loadError) return <main className="container writer-empty"><span className="eyebrow">MY ROUTE</span><h1>{loadError}</h1><p>저장된 코스와 샘플 코스는 목록에서 계속 볼 수 있어요.</p><button type="button" className="button button-primary" onClick={() => void retryRoutes()}>다시 불러오기</button></main>;
+  if (sourceId && (!existing || (editId && !existing.owned))) return <main className="container writer-empty"><span className="eyebrow">MY ROUTE</span><h1>수정할 루트를 찾을 수 없어요</h1><p>이 브라우저에서 편집 권한을 보관한 루트인지 확인하거나 새 루트를 만들어보세요.</p><Link href="/routes" className="button button-secondary">루트 목록으로</Link></main>;
+  return <WriterForm key={`${copyId ? "copy:" : "edit:"}${existing?.legacySourceId ?? sourceId ?? initialStadium ?? "new"}`} copying={Boolean(copyId)} existing={existing} initialStadium={initialStadium} />;
 }
 
 function WriterForm({ existing, copying = false, initialStadium }: { existing?: TripRoute; copying?: boolean; initialStadium?: string }) {
@@ -77,7 +77,7 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const dirty = useRef(restoredDraft?.dirty ?? false);
   const savingRef = useRef(false);
-  const savedRouteRef = useRef<TripRoute | undefined>(existing && !copying && !existing.isSample ? existing : undefined);
+  const savedRouteRef = useRef<TripRoute | undefined>(existing && !copying && existing.owned ? existing : undefined);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const current = stadiums.find((stadium) => stadium.code === stadiumCode)!;
@@ -143,22 +143,24 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
     if (!canSave) { setError("코스 이름과 방문 장소를 확인해 주세요. 본문은 선택 사항이며 12,000자까지 작성할 수 있어요."); return; }
     savingRef.current = true; setSaving(true);
     const saved = savedRouteRef.current;
-    const id = saved?.id ?? `local-${crypto.randomUUID()}`;
     const route: TripRoute = {
-      id, title: title.trim(), stadium: current.name, description: (plainContent.trim() || withCourseStart(stops, start).map((stop) => stop.name).join(" → ")).replace(/\s+/g, " ").slice(0, 100),
+      id: saved?.id ?? "", title: title.trim(), stadium: current.name, description: (plainContent.trim() || withCourseStart(stops, start).map((stop) => stop.name).join(" → ")).replace(/\s+/g, " ").slice(0, 100),
       content: content.trim(), ...(contentFormat ? { contentFormat } : {}), tags, duration, cover: existing?.cover ?? "/images/stadium-night.jpg", stops, ...(start ? { start } : {}),
-      author: "나의 코스", likes: saved?.likes ?? 0, views: saved?.views ?? 0,
-      isSample: false, createdAt: saved?.createdAt ?? new Date().toISOString(),
+      author: "익명", likes: saved?.likes ?? 0, views: saved?.views ?? 0, owned: true,
+      isSample: false, createdAt: saved?.createdAt ?? new Date().toISOString(), ...(saved?.legacy ? { legacy: true } : {}), ...(saved?.legacySourceId ? { legacySourceId: saved.legacySourceId } : {}),
     };
     try {
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      saveRoute(route); savedRouteRef.current = route; writerDrafts.delete(draftKey); dirty.current = false;
+      const persisted = await saveRoute(route);
+      if (saved?.legacy) { const url = new URL(window.location.href); url.searchParams.delete("copy"); url.searchParams.set("edit", persisted.id); window.history.replaceState(window.history.state, "", url); }
+      savedRouteRef.current = persisted; writerDrafts.delete(draftKey); dirty.current = false;
       savingRef.current = false; setSaving(false);
-      const showSavedCourse = () => router.push(`/routes/${encodeURIComponent(id)}`);
+      if (persisted.saveWarning) setError(persisted.saveWarning);
+      const showSavedCourse = () => router.push(`/routes/${encodeURIComponent(persisted.id)}`);
       if (askReview) {
         setConfirmation({
           title: "코스 후기를 작성하시겠어요?",
-          description: "코스가 이 브라우저에 저장됐어요. 후기를 추가로 작성할 수 있어요.",
+          description: persisted.saveWarning ? `코스가 커뮤니티에 저장됐어요. ${persisted.saveWarning}` : "코스가 커뮤니티에 저장됐어요. 후기를 추가로 작성할 수 있어요.",
           label: "예", cancelLabel: "아니요", cancelAction: showSavedCourse,
           action: () => {
             setTab("write");
@@ -169,8 +171,8 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
             }));
           },
         });
-      } else router.push("/routes");
-    } catch { savingRef.current = false; setSaving(false); setError("저장하지 못했어요. 브라우저 저장 공간이나 개인정보 보호 설정을 확인해 주세요. 작성 내용은 이 화면에 남아 있어요."); }
+      } else if (!persisted.saveWarning) router.push("/routes");
+    } catch (caught) { savingRef.current = false; setSaving(false); setError(caught instanceof Error ? caught.message : "저장하지 못했어요. 다시 시도해 주세요. 작성 내용은 이 화면에 남아 있어요."); }
   }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -210,7 +212,7 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
           </fieldset>
           <div className="writer-save-area">
             {error && <div role="alert" className="writer-error">{error}</div>}
-            <div className="writer-save-row"><p><strong>{canSave ? "나의 직관 루트가 준비됐어요." : "코스 이름과 방문 장소를 채워주세요."}</strong><span>이 브라우저에 저장돼요. 다른 사용자에게 공개되지 않아요.</span></p><button className="button button-primary" type="submit" disabled={!canSave || saving}>{saving ? <><span className="writer-spinner" aria-hidden="true" />저장하고 있어요</> : <><WriterIcon kind="save" />작성 완료</>}</button></div>
+            <div className="writer-save-row"><p><strong>{canSave ? "나의 직관 루트가 준비됐어요." : "코스 이름과 방문 장소를 채워주세요."}</strong><span>{existing?.legacy ? "이전 코스는 다시 저장하면 커뮤니티에 공개돼요." : "코스는 커뮤니티에 공개되고 편집 권한만 이 브라우저에 저장돼요."}</span></p><button className="button button-primary" type="submit" disabled={!canSave || saving}>{saving ? <><span className="writer-spinner" aria-hidden="true" />저장하고 있어요</> : <><WriterIcon kind="save" />작성 완료</>}</button></div>
           </div>
         </form>
         <dialog ref={dialogRef} className="writer-confirm-dialog" aria-labelledby="writer-confirm-title" aria-describedby="writer-confirm-description" onCancel={(event) => { event.preventDefault(); setConfirmation(null); }}>

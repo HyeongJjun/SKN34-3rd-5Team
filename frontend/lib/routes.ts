@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { additionalRouteExamples } from "./additional-route-examples";
+import { fetchCourses, persistCourse, removeCourse } from "./course-api";
 
 export type RouteStop = { name: string; lat: number; lng: number; category: string; placeId?: string; visitId?: string; address?: string; tourContentId?: string; isMapPoint?: boolean; isDrawnPoint?: boolean };
 export function areValidCoordinates(lat: unknown, lng: unknown): boolean {
@@ -14,6 +15,10 @@ export type TripRoute = {
   views?: number; contentFormat?: "html";
   routeNumber?: string;
   start?: { lat: number; lng: number };
+  owned?: boolean;
+  legacy?: boolean;
+  legacySourceId?: string;
+  saveWarning?: string;
 };
 
 const sampleRouteData: TripRoute[] = [
@@ -100,9 +105,9 @@ export const sampleRoutes: TripRoute[] = sampleRouteData.map(route => ({
   stops: route.stops.map((stop, index) => index === 0 ? { ...stop, isDrawnPoint: true } : stop),
 }));
 
-const ROUTES_KEY = "kbo-trip-routes-v1";
 const LIKES_KEY = "kbo-trip-likes-v1";
 const VIEWS_KEY = "kbo-trip-views-v1";
+const ROUTES_KEY = "kbo-trip-routes-v1";
 const viewedThisSession = new Set<string>();
 const CHANGE_EVENT = "kbo-routes-change";
 const EMPTY = "[]";
@@ -119,20 +124,30 @@ function isRoute(value: unknown): value is TripRoute {
     && typeof item.likes === "number" && Number.isFinite(item.likes) && typeof item.isSample === "boolean"
     && (item.views === undefined || (typeof item.views === "number" && Number.isFinite(item.views) && item.views >= 0))
     && (item.contentFormat === undefined || item.contentFormat === "html")
+    && (item.owned === undefined || typeof item.owned === "boolean")
+    && (item.legacy === undefined || typeof item.legacy === "boolean")
+    && (item.legacySourceId === undefined || typeof item.legacySourceId === "string")
+    && (item.saveWarning === undefined || typeof item.saveWarning === "string")
     && (item.start === undefined || (item.start !== null && typeof item.start === "object" && areValidCoordinates((item.start as Record<string, unknown>).lat, (item.start as Record<string, unknown>).lng)))
     && Array.isArray(item.tags) && item.tags.every(tag => typeof tag === "string")
-    && Array.isArray(item.stops) && item.stops.every(stop => stop && typeof stop === "object" && typeof stop.name === "string" && typeof stop.category === "string" && (stop.placeId === undefined || typeof stop.placeId === "string") && (stop.address === undefined || typeof stop.address === "string") && (stop.tourContentId === undefined || typeof stop.tourContentId === "string") && (stop.isMapPoint === undefined || typeof stop.isMapPoint === "boolean") && (stop.isDrawnPoint === undefined || typeof stop.isDrawnPoint === "boolean") && areValidCoordinates(stop.lat, stop.lng));
+    && Array.isArray(item.stops) && item.stops.every(stop => stop && typeof stop === "object" && typeof stop.name === "string" && typeof stop.category === "string" && (stop.placeId === undefined || typeof stop.placeId === "string") && (stop.visitId === undefined || typeof stop.visitId === "string") && (stop.address === undefined || typeof stop.address === "string") && (stop.tourContentId === undefined || typeof stop.tourContentId === "string") && (stop.isMapPoint === undefined || typeof stop.isMapPoint === "boolean") && (stop.isDrawnPoint === undefined || typeof stop.isDrawnPoint === "boolean") && areValidCoordinates(stop.lat, stop.lng));
 }
 
 function parseStoredRoutes(raw: string): TripRoute[] {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isRoute).filter(route => !route.isSample && !sampleRoutes.some(sample => sample.id === route.id));
+    return parsed.filter(isRoute).filter(route => !route.isSample && !sampleRoutes.some(sample => sample.id === route.id)).map(route => ({ ...route, owned: true, legacy: true }));
   } catch { return []; }
 }
 
-function subscribe(callback: () => void) {
+function removeStoredRoute(id: string): void {
+  const parsed: unknown = JSON.parse(readStorage(ROUTES_KEY));
+  if (!Array.isArray(parsed)) throw new Error("저장된 코스 정보를 확인해 주세요.");
+  persist(ROUTES_KEY, parsed.filter(item => !item || typeof item !== "object" || (item as Record<string, unknown>).id !== id));
+}
+
+function subscribeStorage(callback: () => void) {
   window.addEventListener("storage", callback);
   window.addEventListener(CHANGE_EVENT, callback);
   return () => { window.removeEventListener("storage", callback); window.removeEventListener(CHANGE_EVENT, callback); };
@@ -146,27 +161,72 @@ function persist(key: string, value: unknown): void {
 }
 
 export function getRoutes(): TripRoute[] {
-  return [...parseStoredRoutes(readStorage(ROUTES_KEY)), ...sampleRoutes];
+  return routeSnapshot;
 }
 
-export function saveRoute(route: TripRoute): void {
+const routeListeners = new Set<() => void>();
+const migratedLegacyIds = new Set<string>();
+let serverRoutes: TripRoute[] = [];
+let routeSnapshot = sampleRoutes;
+let routesReady = false;
+let routesError = "";
+let refreshing: Promise<void> | undefined;
+const legacyRoutes = () => parseStoredRoutes(readStorage(ROUTES_KEY)).filter(route => !migratedLegacyIds.has(route.id));
+const publishRoutes = () => { routeSnapshot = [...serverRoutes, ...legacyRoutes(), ...sampleRoutes]; routeListeners.forEach(listener => listener()); };
+const subscribeRoutes = (listener: () => void) => {
+  routeListeners.add(listener);
+  window.addEventListener("storage", publishRoutes);
+  return () => { routeListeners.delete(listener); window.removeEventListener("storage", publishRoutes); };
+};
+function refreshRoutes() {
+  if (!refreshing) {
+    routesError = "";
+    refreshing = fetchCourses().then(routes => { serverRoutes = routes; }).catch(() => { routesError = "코스 목록을 불러오지 못했어요."; }).finally(() => { routesReady = true; publishRoutes(); refreshing = undefined; });
+    publishRoutes();
+  }
+  return refreshing;
+}
+
+export const retryRoutes = () => refreshRoutes();
+
+export async function saveRoute(route: TripRoute): Promise<TripRoute> {
   if (!isRoute(route) || route.isSample || sampleRoutes.some(sample => sample.id === route.id)) throw new Error("저장할 코스 정보를 다시 확인해 주세요.");
-  const stored = parseStoredRoutes(readStorage(ROUTES_KEY));
-  persist(ROUTES_KEY, [route, ...stored.filter(item => item.id !== route.id)]);
+  const saved = await persistCourse(route);
+  const published = route.legacy ? { ...saved, legacySourceId: route.id } : route.legacySourceId ? { ...saved, legacySourceId: route.legacySourceId } : saved;
+  if (route.legacy) {
+    migratedLegacyIds.add(route.id);
+    try { removeStoredRoute(route.id); } catch {}
+  }
+  serverRoutes = [published, ...serverRoutes.filter(item => item.id !== published.id)];
+  publishRoutes();
+  return published;
 }
 
-export function deleteRoute(id: string): void {
-  persist(ROUTES_KEY, parseStoredRoutes(readStorage(ROUTES_KEY)).filter(route => route.id !== id));
+export async function deleteRoute(id: string): Promise<void> {
+  if (legacyRoutes().some(route => route.id === id)) {
+    removeStoredRoute(id);
+    migratedLegacyIds.add(id);
+    publishRoutes();
+    return;
+  }
+  await removeCourse(id);
+  serverRoutes = serverRoutes.filter(route => route.id !== id);
+  publishRoutes();
 }
 
 export function useRoutes(): TripRoute[] {
-  const raw = useSyncExternalStore(subscribe, () => readStorage(ROUTES_KEY), () => EMPTY);
-  return useMemo(() => [...parseStoredRoutes(raw), ...sampleRoutes], [raw]);
+  useEffect(() => { void refreshRoutes(); }, []);
+  return useSyncExternalStore(subscribeRoutes, () => routeSnapshot, () => sampleRoutes);
 }
 
-const subscribeToHydration = () => () => {};
 export function useRoutesReady(): boolean {
-  return useSyncExternalStore(subscribeToHydration, () => true, () => false);
+  useEffect(() => { void refreshRoutes(); }, []);
+  return useSyncExternalStore(subscribeRoutes, () => routesReady, () => false);
+}
+
+export function useRoutesError(): string {
+  useEffect(() => { void refreshRoutes(); }, []);
+  return useSyncExternalStore(subscribeRoutes, () => routesError, () => "");
 }
 
 function parseViews(raw: string): Record<string, number> {
@@ -178,7 +238,7 @@ function parseViews(raw: string): Record<string, number> {
 }
 
 export function useRouteViews(): Record<string, number> {
-  const raw = useSyncExternalStore(subscribe, () => readStorage(VIEWS_KEY), () => EMPTY);
+  const raw = useSyncExternalStore(subscribeStorage, () => readStorage(VIEWS_KEY), () => EMPTY);
   return useMemo(() => parseViews(raw), [raw]);
 }
 
@@ -198,7 +258,7 @@ function parseLikes(raw: string): string[] {
 }
 
 export function useLikedRoutes(): string[] {
-  const raw = useSyncExternalStore(subscribe, () => readStorage(LIKES_KEY), () => EMPTY);
+  const raw = useSyncExternalStore(subscribeStorage, () => readStorage(LIKES_KEY), () => EMPTY);
   return useMemo(() => parseLikes(raw), [raw]);
 }
 

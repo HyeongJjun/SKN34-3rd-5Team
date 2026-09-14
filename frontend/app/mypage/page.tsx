@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { saveMemberSettings } from "@/lib/member-settings";
 import { usePreviewMember, updatePreviewProfile } from "@/lib/member-preview";
-import { useRoutes, useLikedRoutes, useRoutesReady } from "@/lib/routes";
+import { retryRoutes, useRoutes, useLikedRoutes, useRoutesError, useRoutesReady } from "@/lib/routes";
 import { teamBoards } from "@/lib/team-community";
 import { MEMBER_LEVELS, nextNicknameChangeAt } from "@/lib/member-policy";
 import { RouteCard } from "@/components/route-card";
@@ -18,6 +18,7 @@ function MyPageContent() {
   const member = usePreviewMember();
   const ready = useRoutesReady();
   const routes = useRoutes();
+  const loadError = useRoutesError();
   const likes = useLikedRoutes();
   const router = useRouter();
   const search = useSearchParams();
@@ -30,7 +31,7 @@ function MyPageContent() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  const own = routes.filter(route => !route.isSample);
+  const own = routes.filter(route => route.owned);
   const liked = routes.filter(route => likes.includes(route.id));
   if (!ready) return <main className={`container ${styles.page}`}><p role="status">회원 화면을 불러오고 있어요.</p></main>;
   if (!member) return <main className={`container ${styles.page}`}><h1>마이페이지</h1><p className={styles.note}>일반 회원 미리보기 로그인 후 이용할 수 있어요.</p><Link className="button button-primary" href="/login">로그인</Link></main>;
@@ -42,7 +43,8 @@ function MyPageContent() {
   return <main className={`container ${styles.page}`}>
     <p className="eyebrow">MY PAGE</p><h1>마이페이지</h1>
     <section className={styles.profile} aria-label="내 프로필"><div className={styles.avatarWrap}><div className={styles.avatar} aria-hidden="true">{member.avatar ? <Image src={member.avatar} alt="" width={60} height={60} unoptimized /> : <Image src="/images/default-avatar.svg" alt="" width={60} height={60} />}</div>{team && <span className={styles.teamBadge} title={team.name}><Image src={`/images/teams/${team.code.toLowerCase()}.svg`} alt={`응원팀 ${team.name}`} width={22} height={22} /></span>}</div><div><h2 className={styles.memberName}>{member.nickname}님<span className={styles.memberRank}><Image className={styles.levelBadge} src={level.image} alt={`회원 등급 ${level.label}`} title={`회원 등급 ${level.label}`} width={30} height={30} /><span className={styles.memberPoints}>{member.points}pt</span></span></h2><p>일반 회원 · {team?.name ?? "응원팀 미설정"}</p></div><Link href="/routes/new" className="button button-primary">코스 만들기</Link></section>
-    <p className={styles.note}>일반 회원 미리보기 · 프로필과 코스는 이 브라우저에만 저장돼요.</p>
+    <p className={styles.note}>새 코스는 공개되며 편집 권한만 이 브라우저에 저장돼요. 이전 버전 코스는 다시 저장하기 전까지 이 브라우저에만 남아요.</p>
+    {loadError && <p className={styles.note} role="alert">{loadError} 이전 버전 코스만 표시될 수 있어요. <button type="button" onClick={() => void retryRoutes()}>다시 불러오기</button></p>}
     <nav className={styles.tabs} aria-label="마이페이지 메뉴">
       <button type="button" aria-pressed={tab === "courses"} onClick={() => setTab("courses")}>내 코스 <b>{own.length}</b></button>
       <button type="button" aria-pressed={tab === "likes"} onClick={() => setTab("likes")}>찜한 코스 <b>{liked.length}</b></button>
