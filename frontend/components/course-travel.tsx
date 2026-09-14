@@ -29,7 +29,7 @@ export function useCourseDirections(stops: RouteStop[], enabled = true, initialS
   const startLocation = origin === "current" ? location : origin === "custom" ? customLocation : null;
   const points = useMemo(() => startLocation ? [startLocation, ...stops] : stops, [startLocation, stops]);
   const ready = enabled && stops.length > 0 && points.length >= 2 && (origin === "first" || Boolean(startLocation)) && !locating && !picking;
-  const payload = JSON.stringify({ mode, points: points.map(({ lat, lng }) => ({ lat, lng })) });
+  const payload = JSON.stringify({ action: "directions", mode, points: points.map(({ lat, lng }) => ({ lat, lng })) });
   const requestKey = `${payload}:${attempt}`;
   useEffect(() => () => { locationRequest.current++; }, []);
   useEffect(() => {

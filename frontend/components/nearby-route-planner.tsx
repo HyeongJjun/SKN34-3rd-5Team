@@ -263,8 +263,7 @@ function LoadedPlanner({ maps, stadium, stops, onChange: onStopsChange, initialS
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
     let active = true;
-    const params = new URLSearchParams({ stadium: stadium.code, lat: String(stadium.lat), lng: String(stadium.lng) });
-    fetch(`/tour-api?${params}`, { signal: controller.signal }).then(async (response) => {
+    fetch("/directions-api", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "tourism", stadium: stadium.code, lat: stadium.lat, lng: stadium.lng }), signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error("Tourism places unavailable");
       const result: TourResult = await response.json();
       if (!Array.isArray(result.places) || !["ok", "partial", "unconfigured", "error"].includes(result.status)) throw new Error("Invalid tourism response");
