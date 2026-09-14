@@ -65,7 +65,7 @@ jobs:
             docker compose up -d --no-deps --force-recreate nginx
             docker compose exec -T nginx nginx -t
 
-  # 3. Discord 알림
+  # 3. Discord 알림!
   notify-discord:
     needs: [ci-test, cd-deploy]
     if: always()
