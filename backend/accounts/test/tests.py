@@ -52,7 +52,7 @@ class SignupTest(APITestCase):
         response = self.signup("newuser", password)
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(get_user_model().objects.count(), 1)
+        self.assertEqual(get_user_model().objects.filter(username="newuser").count(), 1)
         user = get_user_model().objects.get(username="newuser")
         self.assertNotEqual(user.password, password)
         self.assertTrue(user.check_password(password))
