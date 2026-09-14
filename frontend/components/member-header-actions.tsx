@@ -1,12 +1,10 @@
 "use client";
-import { MemberInbox } from "./member-inbox";
-import { MemberNotifications } from "./member-notifications";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { usePreviewMember, setPreviewSignedIn } from "@/lib/member-preview";
+import { useMemberAuth } from "@/lib/member-auth";
 export function MemberHeaderActions() {
-  const member = usePreviewMember();
+  const { status, user, setUser } = useMemberAuth();
   const router = useRouter();
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
@@ -20,7 +18,7 @@ export function MemberHeaderActions() {
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
   }, [open]);
   return <>
-    {member ? <><div className="member-menu" ref={root}>
+    {status === "loading" ? <span role="status">회원 확인 중…</span> : user ? <><div className="member-menu" ref={root}>
       <button ref={trigger} type="button" className="button button-primary header-signup" aria-expanded={open} aria-controls="member-menu-panel" onClick={() => setOpen(!open)}>마이페이지</button>
       {open && <nav id="member-menu-panel" className="member-menu-panel" aria-label="마이페이지 메뉴">
         <Link href="/mypage?tab=courses" onClick={() => setOpen(false)}>내 코스</Link>
@@ -29,9 +27,9 @@ export function MemberHeaderActions() {
         <hr className="member-menu-divider" />
         <Link href="/mypage?tab=profile" onClick={() => setOpen(false)}>회원 정보</Link>
         <hr className="member-menu-divider" />
-        <button type="button" onClick={() => { try { setPreviewSignedIn(false); setOpen(false); setError(""); router.push("/"); } catch (cause) { setError(cause instanceof Error ? cause.message : "로그아웃하지 못했어요."); } }}>로그아웃</button>
+        <button type="button" onClick={async () => { setOpen(false); setError(""); try { const response = await fetch("/team-auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); const result = await response.json(); setUser(null); router.push("/"); if (!response.ok) setError(result.warning ?? result.error ?? "서버의 로그아웃 여부를 확인하지 못했어요."); } catch { setUser(null); router.push("/"); setError("서버의 로그아웃 여부를 확인하지 못했어요."); } }}>로그아웃</button>
       </nav>}
-    </div><MemberInbox /><MemberNotifications /></> : <><Link className="login-link" href="/login">로그인</Link><Link className="button button-primary header-signup" href="/signup">회원가입</Link></>}
+    </div></> : <><Link className="login-link" href="/login">로그인</Link><Link className="button button-primary header-signup" href="/signup">회원가입</Link>{status === "unavailable" && <span role="status">회원 서버 확인 필요</span>}</>}
     {error && <span role="alert">{error}</span>}
   </>;
 }
