@@ -20,6 +20,7 @@ from llm.views import ChatMessageView, ChatRoomDetailView, ChatRoomView
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("travel.urls")),
+    path("community/", include("community.urls")),
     path("chat/sessions/", ChatRoomView.as_view()),
 
     path(

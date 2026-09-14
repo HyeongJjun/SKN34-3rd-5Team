@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'llm',
     'accounts',
     'travel',
+    'community',
 ]
 
 MIDDLEWARE = [
