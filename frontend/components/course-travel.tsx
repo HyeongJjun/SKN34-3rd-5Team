@@ -52,7 +52,11 @@ export function useCourseDirections(stops: RouteStop[], enabled = true, initialS
   function chooseCurrent() {
     setOrigin("current"); setPicking(false); setLocation(null); setLocationError("");
     const sequence = ++locationRequest.current;
-    if (!navigator.geolocation) { setLocationError("이 브라우저에서는 위치를 가져올 수 없어요. 코스 1번 출발을 선택해 주세요."); return; }
+    if (!window.isSecureContext || !navigator.geolocation) {
+      setOrigin("custom"); setPicking(true);
+      setLocationError("HTTP 주소에서는 자동 위치 확인이 제한돼요. 지도에서 내 위치로 사용할 지점을 눌러 주세요.");
+      return;
+    }
     setLocating(true);
     navigator.geolocation.getCurrentPosition((position) => {
       if (locationRequest.current !== sequence) return;
@@ -62,16 +66,17 @@ export function useCourseDirections(stops: RouteStop[], enabled = true, initialS
       setLocating(false);
     }, (error) => {
       if (locationRequest.current !== sequence) return;
-      setLocating(false); setLocationError(error.code === 1 ? "위치 권한이 거부됐어요. 권한을 허용하거나 코스 1번에서 출발해 주세요." : "현재 위치를 확인하지 못했어요. 다시 시도하거나 코스 1번에서 출발해 주세요.");
+      setLocating(false); setOrigin("custom"); setPicking(true);
+      setLocationError(error.code === 1 ? "위치 권한이 거부됐어요. 지도에서 내 위치로 사용할 지점을 눌러 주세요." : "현재 위치를 확인하지 못했어요. 지도에서 내 위치로 사용할 지점을 눌러 주세요.");
     }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   }
   function chooseCustom() { locationRequest.current++; setLocating(false); setLocationError(""); setOrigin("custom"); setPicking(true); }
   function pickLocation(point: TravelPoint) {
     if (replaceOrigin?.(point)) { setCustomLocation(null); setOrigin("first"); }
     else { setCustomLocation(point); setOrigin("custom"); }
-    setPicking(false);
+    setPicking(false); setLocationError("");
   }
-  function cancelPicking() { setPicking(false); if (!customLocation) setOrigin("first"); }
+  function cancelPicking() { setPicking(false); setLocationError(""); if (!customLocation) setOrigin("first"); }
   function reset() {
     locationRequest.current++;
     setLegSelection(null); setMode("walk"); setOrigin("first");
@@ -85,7 +90,8 @@ export function useCourseDirections(stops: RouteStop[], enabled = true, initialS
 }
 type TravelState = ReturnType<typeof useCourseDirections>;
 
-export function useTravelOverlay(map: KakaoMap | null, maps: KakaoMaps | null, travel: TravelState) {
+export function useTravelOverlay(map: KakaoMap | null, maps: KakaoMaps | null, travel: TravelState, options: { lineColor?: string } = {}) {
+  const lineColor = options.lineColor;
   const { data, location, origin, picking, pickLocation, selectedLeg } = travel;
   const [viewport, setViewport] = useState(0);
   const routeBands = useMemo(() => splitRouteOverlaps(data?.legs.map((leg) => leg.paths) ?? []), [data]);
@@ -146,7 +152,7 @@ export function useTravelOverlay(map: KakaoMap | null, maps: KakaoMaps | null, t
       return { band, leg, width, offset: (index - (band.legs.length - 1) / 2) * width };
     }));
     lanes.sort((a, b) => Number(a.leg === selectedLeg) - Number(b.leg === selectedLeg));
-    lanes.forEach(({ band, leg, width, offset }) => stroke(offsetRouteBand(band.points, offset), legColor(leg), width, selectedLeg === null || selectedLeg === leg ? 1 : .22, band.legs, leg));
+    lanes.forEach(({ band, leg, width, offset }) => stroke(offsetRouteBand(band.points, offset), lineColor ?? legColor(leg), width, selectedLeg === null || selectedLeg === leg ? 1 : .22, band.legs, leg));
     for (const { leg, index } of legs) {
       if ((selectedLeg !== null && selectedLeg !== index) || placedArrows.length >= 3) continue;
       const paths = leg.paths.map((path) => path.map((point) => ({ ...point, ...projection.containerPointFromCoords(new maps.LatLng(point.lat, point.lng)) })));
@@ -167,7 +173,7 @@ export function useTravelOverlay(map: KakaoMap | null, maps: KakaoMaps | null, t
       arrow.setAttribute("class", "course-route-direction"); arrow.setAttribute("data-leg", String(index));
       arrow.setAttribute("d", "M-3 -4L2 0L-3 4");
       arrow.setAttribute("transform", `translate(${x} ${y}) rotate(${candidate.angle * 180 / Math.PI})`);
-      arrow.style.setProperty("--route-color", legColor(index));
+      arrow.style.setProperty("--route-color", lineColor ?? legColor(index));
       svg.appendChild(arrow); placedArrows.push(candidate);
     }
     if (data) overlays.push(new maps.CustomOverlay({ map, position: anchorCoordinate, content: surface, xAnchor: .5, yAnchor: .5, zIndex: 2 }));
@@ -176,7 +182,7 @@ export function useTravelOverlay(map: KakaoMap | null, maps: KakaoMaps | null, t
       overlays.push(new maps.CustomOverlay({ map, position: new maps.LatLng(location.lat, location.lng), content: label, yAnchor: 1, zIndex: 14 }));
     }
     return () => overlays.forEach((overlay) => overlay.setMap(null));
-  }, [map, maps, data, location, origin, selectedLeg, viewport, travel.points, routeBands]);
+  }, [map, maps, data, location, origin, selectedLeg, viewport, travel.points, routeBands, lineColor]);
 }
 
 export function CourseTravelPanel({ travel, stops, onFit, showDirections = true, originReplacement }: { travel: TravelState; stops: RouteStop[]; onFit?: () => void; showDirections?: boolean; originReplacement?: ReactNode }) {
@@ -197,7 +203,7 @@ export function CourseTravelPanel({ travel, stops, onFit, showDirections = true,
     </div>}</>}
     {showDirections && <div className="course-modes" role="group" aria-label="이동 수단">{TRAVEL_MODES.map((item) => <button type="button" key={item.id} aria-pressed={mode === item.id} onClick={() => travel.setMode(item.id)}>{item.label}</button>)}</div>}
     <div aria-live="polite" className="course-travel-status">
-      {travel.picking ? <p>지도에서 출발할 위치를 눌러 주세요. <button type="button" onClick={travel.cancelPicking}>지정 취소</button></p> : travel.locating ? <p>내 위치를 확인하고 있어요.</p> : travel.locationError ? <p role="alert">{travel.locationError}</p> : !showDirections ? <p>{stops.length === 0 ? travel.location ? "출발 위치를 정했어요. 코스에 방문할 장소를 추가해 주세요." : "첫 번째 지점에서 출발하거나, 내 위치·지도에서 출발지를 먼저 정할 수 있어요." : "코스 완성을 누르면 예상 이동 시간을 확인할 수 있어요."}</p> : !travel.ready ? <p>{stops.length === 0 ? "코스에 방문 장소를 추가해 주세요." : "코스에 두 곳 이상 담거나 별도의 시작 위치를 설정해 보세요."}</p> : travel.loading ? <p>{TRAVEL_MODES.find((item) => item.id === mode)!.label} 경로를 조회하고 있어요…</p> : travel.error ? <p role="alert">{travel.error}</p> : data && <>
+      {travel.picking ? <p>{travel.locationError || "지도에서 출발할 위치를 눌러 주세요."} <button type="button" onClick={travel.cancelPicking}>지정 취소</button></p> : travel.locating ? <p>내 위치를 확인하고 있어요.</p> : travel.locationError ? <p role="alert">{travel.locationError}</p> : !showDirections ? <p>{stops.length === 0 ? travel.location ? "출발 위치를 정했어요. 코스에 방문할 장소를 추가해 주세요." : "첫 번째 지점에서 출발하거나, 내 위치·지도에서 출발지를 먼저 정할 수 있어요." : "코스 완성을 누르면 예상 이동 시간을 확인할 수 있어요."}</p> : !travel.ready ? <p>{stops.length === 0 ? "코스에 방문 장소를 추가해 주세요." : "코스에 두 곳 이상 담거나 별도의 시작 위치를 설정해 보세요."}</p> : travel.loading ? <p>{TRAVEL_MODES.find((item) => item.id === mode)!.label} 경로를 조회하고 있어요…</p> : travel.error ? <p role="alert">{travel.error}</p> : data && <>
         {data.seconds !== null && data.distance !== null ? <p className="course-travel-total"><strong>약 {travelTime(data.seconds)}</strong><span>총 {travelDistance(data.distance)} · 이동 시간</span></p> : <p role="alert">조회하지 못한 구간이 있어 전체 시간을 계산할 수 없어요.</p>}
         <div className="course-leg-focus" role="group" aria-label="지도 구간 강조">
           <button type="button" aria-pressed={travel.selectedLeg === null} onClick={() => travel.selectLeg(null)}>전체</button>

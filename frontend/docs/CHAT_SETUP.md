@@ -1,6 +1,6 @@
 # 챗봇 연결과 수정
 
-챗봇 화면과 실제 답변을 만드는 부분을 분리했습니다. `.env.example`의 기본값은 **예시 응답 모드**입니다. API 키 없이 대화창·입력·로딩·오류 화면을 개발할 때 사용할 수 있으며, 예시 응답은 실제 Luna 응답과 구분해 표시합니다.
+챗봇 화면과 실제 답변을 만드는 부분을 분리했습니다. 현재 `.env.example`은 일반 채팅 제공자를 `CHAT_PROVIDER=openai`로 설정합니다. API 호출 없이 화면만 개발할 때는 `CHAT_PROVIDER=demo`로 바꿀 수 있으며, 예시 응답은 실제 Luna 응답과 구분해 표시합니다.
 
 ## 전용 채팅 페이지
 
@@ -29,37 +29,42 @@
 
 예시 응답으로 돌아가려면 `CHAT_PROVIDER=demo`로 바꾸고 서버를 재시작합니다. API 키는 `NEXT_PUBLIC_` 변수, 브라우저 코드, 대화 메시지 또는 Git에 넣지 않습니다. `.env.local`은 Git 제외 대상입니다.
 
-팀 Docker는 `frontend` 폴더를 컨테이너의 `/app`에 연결하므로 같은 `frontend/.env.local`을 읽습니다. 환경변수를 변경하면 프론트 컨테이너를 재시작합니다. 이 연결을 위해 포트나 Compose 설정을 바꿀 필요는 없습니다.
+팀 Docker는 저장소 루트 `.env`의 값을 `docker-compose.yml`이 프론트 컨테이너에 전달합니다. Docker 실행에서는 `frontend/.env.local` 대신 루트 `.env`에 키를 넣고 프론트 컨테이너를 재시작합니다. 로컬에서 `npm run dev`로 실행할 때만 `frontend/.env.local`을 사용합니다.
 
 ## 팀 챗봇과 연결
 
-팀의 RAG·LLM 서버가 준비되면 아래 두 값을 설정하고 프론트 서버를 재시작합니다.
+팀의 RAG·LLM 서버를 일반 야구 질문에 연결하려면 로컬 Next 실행에서 아래 두 값을 설정하고 프론트 서버를 재시작합니다.
 
 ```dotenv
 CHAT_PROVIDER=backend
-CHAT_BACKEND_URL=팀_챗봇의_전체_요청_URL
+TEAM_BACKEND_URL=http://localhost:8000/
 ```
 
-브라우저는 항상 같은 사이트의 `/chat-api`로 요청합니다. Next.js 서버가 선택된 제공자로 전달하므로, 화면을 다시 만들 필요 없이 실제 연결 부분을 교체할 수 있습니다. 기존 Nginx에서 `/api/`는 Django에 연결되기 때문에 챗봇 중계 경로는 `/chat-api`로 분리했습니다.
+Docker에서는 `TEAM_BACKEND_URL`을 따로 입력하지 않아도 Compose가 프론트 컨테이너에 `http://backend:8000/`을 전달합니다. 브라우저는 항상 같은 사이트의 `/chat-api`로 요청하고, Next 서버가 로그인 토큰을 붙여 팀 백엔드의 세션 API를 호출합니다. 기존 Nginx에서 `/api/`는 Django에 연결되기 때문에 브라우저용 챗봇 중계 경로는 `/chat-api`로 분리했습니다.
 
-팀 서버에 보내는 요청:
+현재 팀 서버에는 다음 순서로 요청합니다.
 
-```json
-{
-  "messages": [
-    { "role": "user", "content": "잠실 첫 직관 코스를 도와주세요." }
-  ],
-  "context": { "stadium": "잠실야구장", "intent": "route" }
-}
+```text
+POST /chat/sessions/
+Authorization: Bearer {access token}
+Content-Type: application/json
+
+{ "title": "첫 질문의 앞 80자" }
 ```
 
-`messages`에는 `user`와 `assistant` 메시지가 들어갑니다. `context`는 선택 사항이며, `intent`는 `route`, `baseball`, `stadium` 중 하나입니다. 팀 서버는 다음 형식으로 응답하면 됩니다.
+응답의 `id`를 세션 ID로 저장한 뒤 질문을 보냅니다. 선택한 구장이 있으면 질문 앞에 `[선택한 구장: 구장명]` 문맥을 붙입니다.
 
-```json
-{ "reply": "답변 내용" }
+```text
+POST /chat/sessions/{session_id}/messages/
+Authorization: Bearer {access token}
+Content-Type: application/json
+
+{ "content": "[선택한 구장: 잠실야구장]\n질문 내용" }
 ```
 
-`GET /chat-api`는 설정 상태 `{provider, model, ready}`를, `POST /chat-api`는 답변과 상태 `{reply, provider, model, ready}`를 반환합니다. `ready`는 필요한 설정이 있는지 나타내며, 외부 API 인증이나 응답 성공까지 보장하지 않습니다.
+메시지 응답에는 비어 있지 않은 `assistant_message` 문자열이 필요합니다. 프론트는 대화별 세션 ID를 메모리에 보관하고, 접근 토큰이 없거나 만료되면 `kbo_refresh` 쿠키로 갱신을 시도합니다. 따라서 팀 RAG 모드는 로그인된 사용자 세션을 전제로 합니다.
+
+`GET /chat-api`는 설정 상태 `{provider, model, ready}`를, `POST /chat-api`는 답변과 상태 `{reply, provider, model, ready, sessionId}`를 반환합니다. `CHAT_PROVIDER=backend`에서 `ready`는 `TEAM_BACKEND_URL` 설정 여부만 나타내며 로그인 상태나 팀 서버 응답 성공을 보장하지 않습니다.
 
 ## 어디를 수정하나요?
 
@@ -74,10 +79,10 @@ CHAT_BACKEND_URL=팀_챗봇의_전체_요청_URL
 | 요청·응답 형식 | `lib/chat/types.ts` |
 | 챗봇의 역할과 답변 지침 | `lib/chat/prompt.ts` |
 | API 없이 보여주는 예시 답변 | `lib/chat/demo.ts` |
-| Luna 또는 팀 서버 연결 방식 | `lib/chat/server.ts` |
+| 일반 제공자 상태와 Luna 연결 | `lib/chat/server.ts` |
+| 팀 RAG 세션·메시지 응답 변환 | `lib/chat/team.ts` |
+| 팀 백엔드 주소·로그인 토큰 중계 | `lib/team-backend.ts` |
 | 서버 요청 진입점 | `app/chat-api/route.ts` |
-| 루트 작성 화면의 질문 버튼 | `components/route-writer.tsx` |
+| 루트 작성 화면의 질문 문맥 | `components/route-writer.tsx` |
 
-루트 작성 화면의 코스 예시는 고정된 작성 도우미입니다. **AI에게 질문하기**는 현재 선택한 구장·일정·테마를 전용 채팅 페이지에 전달하며, 답변이 작성 중인 본문을 자동으로 바꾸지는 않습니다.
-
-현재 연결은 팀의 검색 데이터, 경기 일정 API, 지도 경로 계산까지 포함한 완성형 RAG가 아닙니다. 공개 서비스에 연결할 때는 팀 백엔드의 인증과 호출량 제한, 데이터 출처 및 답변 검증을 추가해야 합니다.
+루트 작성 화면에서는 선택한 구장과 `route` 의도만 대화 문맥으로 전달합니다. 챗봇 답변이 작성 중인 코스나 본문을 자동으로 바꾸지는 않습니다. 공개 서비스에 연결할 때는 팀 백엔드의 인증과 사용자별 호출량 제한, 답변 검증을 확정해야 합니다.

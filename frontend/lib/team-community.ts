@@ -27,7 +27,7 @@ export type TeamCommunityPost = {
   category: CommunityPostCategory;
   title: string;
   content: string;
-  isSample: true;
+  isSample: boolean;
 };
 
 export function getTeamBoard(code: string) {

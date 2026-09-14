@@ -1,9 +1,9 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { ChatError } from "./chat/validation";
 
 export function teamBackendUrl(path: string) {
-  const base = process.env.CHAT_BACKEND_URL?.trim();
+  const base = process.env.TEAM_BACKEND_URL?.trim() || process.env.CHAT_BACKEND_URL?.trim();
   if (!base) throw new ChatError("팀 백엔드 주소가 설정되지 않았어요.", 503);
   const url = new URL(base.endsWith("/") ? base : `${base}/`);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new ChatError("팀 백엔드 주소 설정을 확인해 주세요.", 503);
@@ -24,9 +24,24 @@ export function checkSameOrigin(request: Request) {
   if ((origin && origin !== expectedOrigin) || request.headers.get("sec-fetch-site") === "cross-site") throw new ChatError("같은 사이트에서 요청해 주세요.", 403);
 }
 
+async function secureAuthCookies() {
+  const configured = process.env.AUTH_COOKIE_SECURE?.trim().toLowerCase();
+  if (configured === "true") return true;
+  if (configured === "false") return false;
+  try {
+    const incoming = await headers();
+    const forwardedProtocol = incoming.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+    if (forwardedProtocol) return forwardedProtocol === "https";
+    const origin = incoming.get("origin") ?? incoming.get("referer") ?? "";
+    return origin.startsWith("https://");
+  } catch {
+    return false;
+  }
+}
+
 export async function saveTokens(access: string, refresh?: string, clearLogout = false) {
   const jar = await cookies();
-  const options = { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/" };
+  const options = { httpOnly: true, sameSite: "lax" as const, secure: await secureAuthCookies(), path: "/" };
   jar.set("kbo_access", access, { ...options, maxAge: 300 });
   if (refresh) jar.set("kbo_refresh", refresh, { ...options, maxAge: 86400 });
   if (clearLogout) jar.delete("kbo_logged_out");
@@ -35,7 +50,7 @@ export async function saveTokens(access: string, refresh?: string, clearLogout =
 export async function clearTokens() {
   const jar = await cookies();
   jar.delete("kbo_access"); jar.delete("kbo_refresh");
-  jar.set("kbo_logged_out", "1", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 86400 });
+  jar.set("kbo_logged_out", "1", { httpOnly: true, sameSite: "lax", secure: await secureAuthCookies(), path: "/", maxAge: 86400 });
 }
 
 async function backendFetch(path: string, init: RequestInit) {

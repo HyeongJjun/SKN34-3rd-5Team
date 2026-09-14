@@ -6,6 +6,7 @@ import { PostCommentCount } from "./post-comment-count";
 import { useState } from "react";
 import type { KboStanding } from "@/lib/kbo/types";
 import { getTeamBoard, getTeamBoardHref, getTeamBoardPosts } from "@/lib/team-community";
+import { commentsForPost, useCommunityContent } from "@/lib/community-store";
 import { Icon } from "./icons";
 import { TeamLogo } from "./team-logo";
 
@@ -15,6 +16,7 @@ export function HomeTeamBoards({ standings, loading, retry }: {
   retry: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const community = useCommunityContent();
   const teams = [...(standings ?? [])].sort((a, b) => a.rank - b.rank).flatMap(standing => {
     const team = getTeamBoard(standing.teamCode);
     return team ? [{ ...team, rank: standing.rank }] : [];
@@ -44,7 +46,7 @@ export function HomeTeamBoards({ standings, loading, retry }: {
                   <Icon name="chevron" size={16} />
                 </Link>
                 <ul className="home-board-posts">
-                  {getTeamBoardPosts(team.code).slice(0, 5).map(post => <li key={post.id}><Link href={getTeamBoardHref(team.code, post.id)}><PostCategory category={post.category} /><span className="home-board-post-title">{post.title}</span><PostCommentCount count={post.commentCount} /></Link></li>)}
+                  {[...community.posts.filter(post => post.board === "teams" && post.teamCode === team.code), ...getTeamBoardPosts(team.code)].slice(0, 5).map(post => <li key={post.id}><Link href={getTeamBoardHref(team.code, post.id)}><PostCategory category={post.category} /><span className="home-board-post-title">{post.title}</span><PostCommentCount count={("commentCount" in post ? post.commentCount ?? 0 : 0) + commentsForPost(community.comments, post.id).length} /></Link></li>)}
                 </ul>
               </article>
             ))}

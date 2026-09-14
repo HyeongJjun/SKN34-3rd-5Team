@@ -29,10 +29,13 @@ load_dotenv(BASE_DIR.parent / ".env", override=False)
 SECRET_KEY = 'django-insecure-xg6ypt+%hw2k@xak+x#7bqqpn(-^vu73^9qh3xnh*=^$pn6jg*'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DJANGO_DEBUG", "true").strip().lower() == "true"
 DEMO_USERS_ENABLED = os.getenv("DEMO_USERS_ENABLED", "false").strip().lower() == "true"
 
-ALLOWED_HOSTS = []
+_allowed_hosts = os.getenv("DJANGO_ALLOWED_HOSTS", "").strip()
+ALLOWED_HOSTS = [host.strip() for host in _allowed_hosts.split(",") if host.strip()]
+if not ALLOWED_HOSTS:
+    ALLOWED_HOSTS = ["*"] if DEBUG else ["localhost", "127.0.0.1", "[::1]", "backend"]
 
 AUTH_USER_MODEL = 'accounts.CustomUser'
 

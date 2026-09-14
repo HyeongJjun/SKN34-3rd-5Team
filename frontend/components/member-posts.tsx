@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useCommunityContent } from "@/lib/community-store";
+import { usePreviewMember } from "@/lib/member-preview";
+import { getTeamBoardHref } from "@/lib/team-community";
 import styles from "./community-board.module.css";
 
 const areas = [{ id: "all", name: "전체" }, { id: "free", name: "자유게시판" }, { id: "teams", name: "팀 게시판" }, { id: "predictions", name: "승부 예측" }] as const;
@@ -9,8 +12,17 @@ type MemberPost = { id: string; area: string; title: string; href: string; creat
 
 export function MemberPosts({ posts = [] }: { posts?: MemberPost[] }) {
   const [area, setArea] = useState<string>("all");
-  // Populate from the authored-post API, independently of saved courses.
-  const visible = posts.filter(post => area === "all" || post.area === area);
+  const member = usePreviewMember();
+  const community = useCommunityContent();
+  const localPosts = community.posts.filter(post => post.authorId === member?.id).map(post => {
+    const params = new URLSearchParams({ post: post.id });
+    if (post.teamCode) params.set("team", post.teamCode);
+    const href = post.board === "free" ? `/community?post=${encodeURIComponent(post.id)}` : post.board === "teams" ? getTeamBoardHref(post.teamCode, post.id) : `/community/predictions?${params.toString()}`;
+    return { id: post.id, area: post.board, title: post.title, href, createdAt: post.createdAt };
+  });
+  // API posts can be supplied later; browser drafts use the same presentation contract.
+  const allPosts = [...localPosts, ...posts.filter(post => !localPosts.some(local => local.id === post.id))];
+  const visible = allPosts.filter(post => area === "all" || post.area === area);
   return <section aria-label="내가 쓴 글">
     <h2 className={styles.memberPostsHeading}>내가 쓴 글</h2>
     <div className={styles.memberPostTags} role="group" aria-label="작성 영역 선택">{areas.map(item => <button type="button" key={item.id} aria-pressed={area === item.id} onClick={() => setArea(item.id)}>{item.name}</button>)}</div>

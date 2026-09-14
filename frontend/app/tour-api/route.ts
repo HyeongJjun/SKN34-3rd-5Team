@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const venue = stadiums.find((stadium) => stadium.code === params.get("stadium"));
   const lat = Number(params.get("lat")), lng = Number(params.get("lng"));
   if (!venue || !params.get("lat")?.trim() || !params.get("lng")?.trim() || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || distanceMeters(venue, { lat, lng }) > 1000) return json({ error: "구장 위치를 확인해 주세요." }, 400);
-  const serviceKey = process.env.TOUR_API_KEY?.trim();
+  const serviceKey = process.env.TOUR_API_KEY?.trim() || process.env.KTO_TOUR_APT_KEY?.trim();
   if (!serviceKey) return json({ status: "unconfigured", places: [], truncated: false } satisfies TourResult);
   const key = `${venue.code}:${lat.toFixed(6)}:${lng.toFixed(6)}`;
   const now = Date.now();

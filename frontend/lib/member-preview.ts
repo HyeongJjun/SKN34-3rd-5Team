@@ -8,8 +8,9 @@ import { teamBoards } from "./team-community";
 export const MEMBER_PREVIEW_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_MEMBER_PREVIEW === "true";
 const KEY = "kbo-member-preview-v1";
 const EVENT = "kbo-member-preview-change";
-const DEFAULT = JSON.stringify({ signedIn: false, nickname: "직관팬", teamCode: "" });
-export type PreviewMember = { id: "preview-member"; nickname: string; teamCode: string; avatar: string; level: MemberLevel; points: number; nicknameChangedAt: string | null; role: "member"; mode: "preview" };
+const DEFAULT = JSON.stringify({ signedIn: false, accountId: 0, username: "", nickname: "직관팬", teamCode: "", role: "member" });
+export type PreviewMember = { id: string; username: string; nickname: string; teamCode: string; avatar: string; level: MemberLevel; points: number; nicknameChangedAt: string | null; role: "member" | "master"; mode: "preview" };
+type PreviewIdentity = { id: number; username: string; nickname: string };
 function read() {
   if (!MEMBER_PREVIEW_ENABLED) return "";
   try { return localStorage.getItem(KEY) ?? DEFAULT; } catch { return DEFAULT; }
@@ -17,8 +18,8 @@ function read() {
 function parse(raw: string) {
   try {
     const value = JSON.parse(raw);
-    return { points: Number.isSafeInteger(value.points) && value.points >= 0 ? value.points : 56, nicknameChangedAt: typeof value.nicknameChangedAt === "string" && Number.isFinite(Date.parse(value.nicknameChangedAt)) ? value.nicknameChangedAt : null, signedIn: value.signedIn === true, nickname: typeof value.nickname === "string" && value.nickname.trim() ? value.nickname.trim().slice(0, 20) : "직관팬", avatar: typeof value.avatar === "string" && value.avatar.length < 600000 && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(value.avatar) ? value.avatar : "", teamCode: teamBoards.some(team => team.code === value.teamCode) ? value.teamCode : "" };
-  } catch { return { signedIn: false, nickname: "직관팬", teamCode: "", avatar: "", points: 56, nicknameChangedAt: null }; }
+    return { points: Number.isSafeInteger(value.points) && value.points >= 0 ? value.points : 56, nicknameChangedAt: typeof value.nicknameChangedAt === "string" && Number.isFinite(Date.parse(value.nicknameChangedAt)) ? value.nicknameChangedAt : null, signedIn: value.signedIn === true, accountId: Number.isSafeInteger(value.accountId) && value.accountId > 0 ? value.accountId : 0, username: typeof value.username === "string" ? value.username.trim().slice(0, 40) : "", nickname: typeof value.nickname === "string" && value.nickname.trim() ? value.nickname.trim().slice(0, 20) : "직관팬", avatar: typeof value.avatar === "string" && value.avatar.length < 600000 && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(value.avatar) ? value.avatar : "", teamCode: teamBoards.some(team => team.code === value.teamCode) ? value.teamCode : "", role: value.role === "master" ? "master" as const : "member" as const };
+  } catch { return { signedIn: false, accountId: 0, username: "", nickname: "직관팬", teamCode: "", avatar: "", points: 56, nicknameChangedAt: null, role: "member" as const }; }
 }
 function subscribe(callback: () => void) {
   window.addEventListener(EVENT, callback); window.addEventListener("storage", callback);
@@ -29,7 +30,15 @@ function write(value: ReturnType<typeof parse>) {
   try { localStorage.setItem(KEY, JSON.stringify(value)); } catch { throw new Error("브라우저에 저장하지 못했어요. 저장 공간 설정을 확인해 주세요."); }
   window.dispatchEvent(new Event(EVENT));
 }
-export function setPreviewSignedIn(signedIn: boolean) { write({ ...parse(read()), signedIn }); }
+export function setPreviewSignedIn(signedIn: boolean, role: "member" | "master" = "member", identity?: PreviewIdentity) {
+  const current = parse(read());
+  write({
+    ...current,
+    signedIn,
+    role: signedIn ? role : "member",
+    ...(signedIn && identity ? { accountId: identity.id, username: identity.username, nickname: identity.nickname, avatar: "", teamCode: "", points: 56, nicknameChangedAt: null } : {}),
+  });
+}
 export function updatePreviewAvatar(avatar: string) {
   const state = parse(read());
   if (!state.signedIn) throw new Error("로그인 후 변경해 주세요.");
@@ -49,6 +58,6 @@ export function usePreviewMember() {
   return useMemo<PreviewMember | null>(() => {
     if (!MEMBER_PREVIEW_ENABLED || !raw) return null;
     const state = parse(raw);
-    return state.signedIn ? { id: "preview-member", nickname: state.nickname, teamCode: state.teamCode, avatar: state.avatar, level: memberLevelForPoints(state.points), points: state.points, nicknameChangedAt: state.nicknameChangedAt, role: "member", mode: "preview" } : null;
+    return state.signedIn ? { id: `preview-member-${state.accountId || 1}`, username: state.username, nickname: state.nickname, teamCode: state.teamCode, avatar: state.avatar, level: memberLevelForPoints(state.points), points: state.points, nicknameChangedAt: state.nicknameChangedAt, role: state.role, mode: "preview" } : null;
   }, [raw]);
 }

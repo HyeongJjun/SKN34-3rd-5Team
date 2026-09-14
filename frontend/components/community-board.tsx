@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { getFreeBoardPosts } from "@/lib/free-community-examples";
 import { CommunityPostBottom } from "./community-post-bottom";
+import { CommunityPostEditor } from "./community-post-editor";
 import { PostCategory } from "./post-category";
 import { PostReportButton } from "./post-report-button";
 import { PostCommentCount } from "./post-comment-count";
 import { useRef, useState } from "react";
 import { getTeamBoard, getTeamBoardHref, getTeamBoardPosts, teamBoards } from "@/lib/team-community";
+import { commentsForPost, localPostsForBoard, useCommunityContent } from "@/lib/community-store";
 import { useCommunityVotes } from "@/lib/community-votes";
+import { usePreviewMember } from "@/lib/member-preview";
 import styles from "./community-board.module.css";
 
 const boards = [
@@ -19,11 +22,14 @@ const boards = [
 
 export function CommunityBoard({ section, teamCode = "", postId = "" }: { section: typeof boards[number]["id"]; teamCode?: string; postId?: string }) {
   const writeDialog = useRef<HTMLDialogElement>(null);
+  const member = usePreviewMember();
+  const community = useCommunityContent();
   const { votes, toggle } = useCommunityVotes();
   const [voteError, setVoteError] = useState("");
   const board = boards.find((item) => item.id === section)!;
   const team = section === "free" ? undefined : getTeamBoard(teamCode);
-  const allPosts = section === "teams" ? teamBoards.flatMap(item => getTeamBoardPosts(item.code)) : section === "free" ? getFreeBoardPosts() : [];
+  const fixturePosts = section === "teams" ? teamBoards.flatMap(item => getTeamBoardPosts(item.code)) : section === "free" ? getFreeBoardPosts() : [];
+  const allPosts = [...localPostsForBoard(community.posts, section), ...fixturePosts].map(post => ({ ...post, commentCount: ("commentCount" in post ? post.commentCount ?? 0 : 0) + commentsForPost(community.comments, post.id).length }));
   const searchContext = `${section}:${teamCode}:${postId}`;
   const [search, setSearch] = useState({ context: searchContext, team: team?.code ?? "all", field: "all", query: "" });
   const activeSearch = search.context === searchContext ? search : { team: team?.code ?? "all", field: "all", query: "" };
@@ -42,7 +48,13 @@ export function CommunityBoard({ section, teamCode = "", postId = "" }: { sectio
   const pageStart = Math.floor((page - 1) / 5) * 5 + 1;
   const pages = Array.from({ length: Math.min(5, pageCount - pageStart + 1) }, (_, index) => pageStart + index);
   const changePage = (nextPage: number) => setPagination({ scope, page: nextPage });
-  const postHref = (code: string, id: string) => section === "free" ? `/community?post=${encodeURIComponent(id)}` : getTeamBoardHref(code, id);
+  const postHref = (code: string, id: string) => {
+    if (section === "free") return `/community?post=${encodeURIComponent(id)}`;
+    if (section === "teams") return getTeamBoardHref(code, id);
+    const params = new URLSearchParams({ post: id });
+    if (code) params.set("team", code);
+    return `/community/predictions?${params.toString()}`;
+  };
   const boardHref = (href: string) => team ? `${href}?team=${team.code}` : href;
   return <main className={`container ${styles.page}`}>
     <p className="eyebrow">COMMUNITY</p>
@@ -67,12 +79,12 @@ export function CommunityBoard({ section, teamCode = "", postId = "" }: { sectio
             <div className={styles.postMetrics}><span>조회 <b>{selectedPost.views}</b></span><span>추천 <b>{selectedPost.recommendations + Number(votes[selectedPost.id] === "up")}</b></span><span>댓글 <b>{selectedPost.commentCount ?? 0}</b></span></div>
           </div>
         </header>
-        <div className={`${styles.postBody} ${styles.teamPostBody} ${styles.reportableBody}`}><div>{selectedPost.content}</div><PostReportButton key={selectedPost.id} postNumber={selectedPost.postNumber} /></div>
+        <div className={`${styles.postBody} ${styles.teamPostBody} ${styles.reportableBody}`}><div>{selectedPost.content}</div><PostReportButton key={selectedPost.id} postId={selectedPost.id} postNumber={selectedPost.postNumber} board={section === "teams" ? `${getTeamBoard(selectedPost.teamCode)?.shortName ?? selectedPost.teamCode} 팀 게시판` : board.title} title={selectedPost.title} reporter={member?.nickname ?? "비회원"} /></div>
         <div className={styles.postVotes} role="group" aria-label="게시글 추천과 비추천">
           {(["up", "down"] as const).map(vote => <button key={vote} type="button" aria-pressed={votes[selectedPost.id] === vote} className={vote === "up" ? styles.voteUp : styles.voteDown} onClick={() => { try { toggle(selectedPost.id, vote); setVoteError(""); } catch { setVoteError("선택을 저장하지 못했어요. 다시 시도해 주세요."); } }}><span>{vote === "up" ? "추천" : "비추천"}</span><b>{vote === "up" ? selectedPost.recommendations + Number(votes[selectedPost.id] === "up") : Number(votes[selectedPost.id] === "down")}</b></button>)}
         </div>
         {voteError && <p role="alert">{voteError}</p>}
-        <CommunityPostBottom key={selectedPost.id} post={selectedPost} posts={posts} teamCode={team?.code} isFree={section === "free"} />
+        <CommunityPostBottom key={selectedPost.id} post={selectedPost} posts={posts} teamCode={team?.code} section={section} />
       </article>}
       <div className={styles.listWriteActions}><button type="button" onClick={() => writeDialog.current?.showModal()}>글쓰기</button></div>
       <div className={styles.tableScroll} role="region" aria-label={`${board.title} 목록, 좁은 화면에서는 좌우로 스크롤`} tabIndex={0}>
@@ -85,14 +97,14 @@ export function CommunityBoard({ section, teamCode = "", postId = "" }: { sectio
             {section !== "free" && <td className={styles.teamCell}>{getTeamBoard(post.teamCode)?.shortName}</td>}
             <td className={styles.titleCell}><Link href={postHref(post.teamCode, post.id)} aria-current={post.id === postId ? "page" : undefined}><PostCategory category={post.category} freeBoard={section === "free"} /> {post.title}<PostCommentCount count={post.commentCount} /></Link></td>
             <td>{post.author}</td>
-            <td>{post.createdAt ?? "—"}</td>
+            <td>{post.createdAt ? new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit", timeZone: "Asia/Seoul" }).format(new Date(post.createdAt)) : "—"}</td>
             <td>{post.views}</td>
             <td>{post.recommendations + Number(votes[post.id] === "up")}</td>
           </tr>) : <tr><td colSpan={section === "free" ? 6 : 7} className={styles.emptyCell}>{query || activeSearch.team !== "all" ? "검색 결과가 없어요." : "등록된 게시글이 없어요."}</td></tr>}</tbody>
         </table>
       </div>
       <div className={styles.listWriteActions}><button type="button" onClick={() => writeDialog.current?.showModal()}>글쓰기</button></div>
-      <dialog ref={writeDialog} className={styles.reportDialog} aria-label="글쓰기 안내"><form method="dialog"><h2>글쓰기</h2><p>게시글 작성은 서버 연결 후 이용할 수 있어요.</p><button type="submit">닫기</button></form></dialog>
+      <CommunityPostEditor ref={writeDialog} section={section} teamCode={team?.code} />
       {pageCount > 1 && <nav className={styles.pagination} aria-label="게시판 페이지">
         <button type="button" aria-label="이전 페이지" disabled={page === 1} onClick={() => changePage(page - 1)}>‹</button>
         {pages.map(number => <button type="button" key={number} aria-label={`${number}페이지`} aria-current={page === number ? "page" : undefined} onClick={() => changePage(number)}>{number}</button>)}

@@ -17,7 +17,7 @@ npm run dev
 
 팀 Docker 환경은 저장소 루트에서 `docker compose up -d --build`로 실행합니다. 이번 변경에서 한글 글꼴 패키지 `@fontsource-variable/noto-sans-kr`를 추가했으므로 의존성 설치 또는 재빌드가 필요합니다. 전체 Docker 환경 구동은 별도 확인이 필요합니다.
 
-지도 기능을 로컬 Node로 실행할 때는 `frontend/.env.example`을 참고해 `frontend/.env.local`을 설정합니다. 팀 Docker에서는 루트 `.env.example`을 참고해 루트 `.env`에 `NEXT_PUBLIC_KAKAO_MAP_KEY`, `KAKAO_REST_API_KEY`, `TOUR_API_KEY`를 설정합니다. Compose가 세 변수를 Next 컨테이너에 전달하며 Docker 환경변수가 `.env.local`보다 우선합니다. JavaScript 키만 공개 변수로 쓰고 REST·관광공사 키는 서버 전용으로 유지합니다. 배포 주소도 카카오 JavaScript SDK 도메인에 등록해야 합니다.
+지도 기능을 로컬 Node로 실행할 때는 `frontend/.env.example`을 참고해 `frontend/.env.local`을 설정합니다. 팀 Docker에서는 루트 `.env.example`을 참고해 루트 `.env`에 `NEXT_PUBLIC_KAKAO_MAP_KEY`, `KAKAO_REST_API_KEY`, `TOUR_API_KEY`를 설정합니다. 기존 환경의 관광공사 키 이름 `KTO_TOUR_APT_KEY`도 지원합니다. Compose가 변수를 Next 컨테이너에 전달하며 Docker 환경변수가 `.env.local`보다 우선합니다. JavaScript 키만 공개 변수로 쓰고 REST·관광공사 키는 서버 전용으로 유지합니다. 배포 주소도 카카오 JavaScript SDK 도메인에 등록해야 합니다.
 
 ## 화면과 현재 동작
 
@@ -37,15 +37,17 @@ npm run dev
 
 UI/UX 가이드의 큰 항목 2~5에 맞춰 여섯 기본 화면, 반응형, 로딩·오류 상태를 구성했습니다. 기존 파랑·흰색과 상단의 KBO 로고·로그인·회원가입을 유지하고 모바일 하단 탐색을 추가했습니다. 카드 목록은 모바일 1열·태블릿 2열·PC 3열입니다. 구현 범위와 팀 연결 작업은 [UI/UX 구현 현황](docs/UIUX_PROGRESS.md)을 참고하세요.
 
+일반 HTTP 주소로 실행할 때 필요한 환경 변수와 브라우저 대체 동작은 [HTTP 배포 호환성](docs/HTTP_DEPLOYMENT.md)을 참고하세요.
+
 코스·좋아요·조회 수는 현재 브라우저의 로컬 저장소에 보관됩니다. 내 코스는 내용을 복사하거나 다른 앱에 보내 공유할 수 있으며, 서버에 공개 게시글로 등록되지는 않습니다. 샘플 코스는 예시이고, 구장 사진은 실제 해당 구장의 사진이 아닌 분위기 이미지입니다. 사진 출처는 `public/images/SOURCES.md`에 있습니다.
 
 경기 일정·선발 투수·순위는 티빙 공개 데이터를 Next 서버에서 공통 수집하며 메인과 상세 페이지가 같은 자료를 사용합니다. 경기 전·무경기일은 1시간, 경기 시작부터 완료 확인까지는 5분 간격이며 수집 실패 시 마지막 성공 자료를 유지합니다. 과거 일정은 2026년 범위로 보관하고 서버 시작 시 저장된 예정 시각과 무관하게 오늘 자료를 한 번 확인합니다. 현재 저장은 서버의 로컬 파일을 사용합니다. 설정과 백엔드 인계 방법은 [KBO 수집 안내](docs/KBO_DATA.md)를 참고하세요.
 
 ## 챗봇
 
-대화창과 답변 서버를 분리했으며, `.env.example`의 기본값은 API 키 없이 동작하는 예시 응답입니다. `frontend/.env.local`에서 `CHAT_PROVIDER=openai`, `OPENAI_MODEL=gpt-5.6-luna`, 서버 전용 `OPENAI_API_KEY`를 설정하고 서버를 재시작하면 Luna 연결을 사용할 수 있습니다. 설정 후 대화창에서 질문을 보내 실제 답변이 도착하는지 확인합니다.
+대화창과 답변 서버를 분리했습니다. 현재 `.env.example`은 일반 채팅 제공자를 `CHAT_PROVIDER=openai`로 설정합니다. 연결 상태의 `ready`는 일반 채팅 제공자만 확인하며, OpenAI 모드에서는 `OPENAI_API_KEY`, 팀 백엔드 모드에서는 `TEAM_BACKEND_URL`의 설정 여부를 뜻합니다. 화면만 개발할 때는 `CHAT_PROVIDER=demo`로 바꿀 수 있습니다.
 
-팀 챗봇이 준비되면 `CHAT_PROVIDER=backend`와 `CHAT_BACKEND_URL`로 전환합니다. 설정 방법, 요청 형식과 수정할 파일은 [챗봇 연결 가이드](docs/CHAT_SETUP.md)를 참고하세요.
+팀 챗봇은 `CHAT_PROVIDER=backend`와 Django 기본 주소인 `TEAM_BACKEND_URL`로 연결합니다. Next 서버가 로그인 토큰을 사용해 채팅 세션을 만들고 메시지를 전송합니다. 설정 방법과 실제 세션 계약은 [챗봇 연결 가이드](docs/CHAT_SETUP.md)를 참고하세요.
 
 ## 실제 서비스 연결 시 남은 작업
 
@@ -54,7 +56,7 @@ UI/UX 가이드의 큰 항목 2~5에 맞춰 여섯 기본 화면, 반응형, 로
 - 카카오 지도·장소 검색은 로컬에서 연결을 확인했습니다. 배포 시 JavaScript SDK 도메인을 등록하고 구장 경계 필터를 검증해야 합니다. 설정·카테고리·표시 한도·데이터 한계는 [직접 코스 작성 안내](docs/NEARBY_PLANNER.md)를 참고하세요.
 - 관광공사 장소도 동일한 반경에 합쳐 표시합니다. Next 서버 전용 `TOUR_API_KEY` 설정이 필요하며, 출처 표시·중복 제거와 오류 시 재시도를 지원합니다.
 - CKEditor 5 라이선스 설정과 이미지 업로드. 사용자가 라이선스 없이 우선 진행하기로 선택해 현재는 일반 본문 입력을 사용하며, `components/editor.tsx`에 라이선스 설정 어댑터를 준비했습니다.
-- 챗봇의 팀 RAG·경기 정보·지도 데이터 연결과 답변 검증. 작성 화면의 코스 예시는 미리 작성된 내용입니다.
+- 팀 RAG의 야구 규정 답변을 검증하고, 새로고침 뒤에도 계정별 대화 기록을 복원할 수 있도록 세션 조회를 화면 상태와 연결해야 합니다.
 - 서비스 정책 문구 확정. 회원가입 화면의 정책 안내는 초안입니다.
 
 ## 검사

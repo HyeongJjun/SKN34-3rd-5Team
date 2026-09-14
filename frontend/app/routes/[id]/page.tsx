@@ -11,6 +11,7 @@ import { RouteDetailSkeleton } from "@/components/route-skeleton";
 import { routeContentToText } from "@/lib/route-content";
 import { coursePointLabel, withCourseStart } from "@/lib/drawn-course";
 import { deleteRoute, recordRouteView, toggleRouteLike, useLikedRoutes, useRoutes, useRoutesReady, useRouteViews } from "@/lib/routes";
+import { shareOrCopy } from "@/lib/browser-share";
 
 function DeleteRouteDialog({ title, error, busy, onCancel, onDelete }: { title: string; error: string; busy: boolean; onCancel: () => void; onDelete: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -56,15 +57,14 @@ export default function RouteDetailPage({ params }: { params: Promise<{ id: stri
     const url = `${window.location.origin}/routes/${encodeURIComponent(route.id)}`;
     const text = `${route.title}\n${route.stadium} · ${route.duration}\n\n${route.stops.map((stop, index) => `${coursePointLabel(route.stops, index)}. ${stop.name}`).join("\n")}\n\n${routeContentToText(route.content, route.contentFormat)}`;
     const shareData: ShareData = route.isSample ? { title: route.title, url } : { title: route.title, text };
-    try {
-      if (navigator.share) { await navigator.share(shareData); return; }
-      await navigator.clipboard.writeText(route.isSample ? url : text);
+    const outcome = await shareOrCopy(shareData, route.isSample ? url : text);
+    if (outcome === "cancelled" || outcome === "shared") return;
+    if (outcome === "copied") {
       setFeedback(route.isSample ? "코스 링크를 복사했어요." : "코스 내용을 복사했어요. 원하는 곳에 붙여 넣어 공유해 보세요.");
-    } catch (caught) {
-      if (caught instanceof DOMException && caught.name === "AbortError") return;
-      setShareFallback(route.isSample ? url : text);
-      setFeedback("자동 복사를 사용할 수 없어요. 아래 내용을 직접 복사해 주세요.");
+      return;
     }
+    setShareFallback(route.isSample ? url : text);
+    setFeedback("자동 복사를 사용할 수 없어요. 아래 내용을 직접 복사해 주세요.");
   };
 
   return (

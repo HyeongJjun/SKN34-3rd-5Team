@@ -12,6 +12,7 @@ import { routeContentToText, type RouteContentFormat } from "@/lib/route-content
 import { useChat } from "@/components/chat-provider";
 import { saveRoute, useRoutes, type RouteStop, type TripRoute } from "@/lib/routes";
 import { withCourseStart } from "@/lib/drawn-course";
+import { createClientId } from "@/lib/client-id";
 
 const subscribeToHydration = () => () => {};
 
@@ -27,6 +28,7 @@ function WriterIcon({ kind }: { kind: "spark" | "pin" | "arrow" | "save" }) {
 }
 
 type WriterTab = "write" | "chat";
+type PlannerMode = "places" | "draw";
 type Confirmation = { title: string; description: string; label: string; action: () => void; cancelLabel?: string; cancelAction?: () => void };
 const writerTabs: { id: WriterTab; label: string }[] = [{ id: "write", label: "루트 작성" }, { id: "chat", label: "챗봇" }];
 type WriterDraft = {
@@ -39,6 +41,7 @@ type WriterDraft = {
   stops: RouteStop[];
   start?: TripRoute["start"];
   tab: WriterTab;
+  plannerMode: PlannerMode;
   dirty: boolean;
 };
 
@@ -72,6 +75,8 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
   const [stops, setStops] = useState<RouteStop[]>(restoredDraft?.stops ?? existing?.stops ?? []);
   const [start, setStart] = useState<TripRoute["start"]>(restoredDraft ? restoredDraft.start : existing?.start);
   const [tab, setTab] = useState<WriterTab>(restoredDraft?.tab ?? "write");
+  const [plannerMode, setPlannerMode] = useState<PlannerMode>(restoredDraft?.plannerMode ?? "places");
+  const [plannerCompleted, setPlannerCompleted] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -86,9 +91,9 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
   useEffect(() => {
     writerDrafts.set(draftKey, {
       stadiumCode, title, content, contentFormat, duration, tags, stops, start,
-      tab, dirty: dirty.current,
+      tab, plannerMode, dirty: dirty.current,
     });
-  }, [draftKey, stadiumCode, title, content, contentFormat, duration, tags, stops, start, tab]);
+  }, [draftKey, stadiumCode, title, content, contentFormat, duration, tags, stops, start, tab, plannerMode]);
 
   useEffect(() => {
     onContextChange({ stadium: current.name, intent: "route" });
@@ -143,7 +148,7 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
     if (!canSave) { setError("코스 이름과 방문 장소를 확인해 주세요. 본문은 선택 사항이며 12,000자까지 작성할 수 있어요."); return; }
     savingRef.current = true; setSaving(true);
     const saved = savedRouteRef.current;
-    const id = saved?.id ?? `local-${crypto.randomUUID()}`;
+    const id = saved?.id ?? `local-${createClientId()}`;
     const route: TripRoute = {
       id, title: title.trim(), stadium: current.name, description: (plainContent.trim() || withCourseStart(stops, start).map((stop) => stop.name).join(" → ")).replace(/\s+/g, " ").slice(0, 100),
       content: content.trim(), ...(contentFormat ? { contentFormat } : {}), tags, duration, cover: existing?.cover ?? "/images/stadium-night.jpg", stops, ...(start ? { start } : {}),
@@ -190,14 +195,21 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
             <legend className="sr-only">직관 루트 작성</legend>
             <section className="writer-card writer-planner-panel" id="writer-panel-planner" aria-labelledby="planner-heading">
               <div className="planner-heading-row">
-                <div><div className="writer-section-title"><span>01</span><h2 id="planner-heading">핀을 골라, 나만의 코스로</h2></div><p>경기 전 식사부터 경기 후 산책까지. 가고 싶은 장소를 직접 이어보세요.</p></div>
-                <div className="writer-field planner-stadium-field"><label htmlFor="route-stadium">어느 구장으로 떠나나요?</label><select id="route-stadium" value={stadiumCode} onChange={(event) => changeStadium(event.target.value)}>{stadiums.map((stadium) => <option key={stadium.code} value={stadium.code}>{stadium.name}</option>)}</select></div>
+                <div className="planner-mode-heading">
+                  <h2 id="planner-heading" className="sr-only">코스 만들기 방법</h2>
+                  <div className="planner-mode-tabs" role="group" aria-labelledby="planner-heading">
+                    <button type="button" aria-pressed={plannerMode === "places"} disabled={plannerCompleted} onClick={() => setPlannerMode("places")}><span>01</span><strong>직접 코스 만들기</strong></button>
+                    <button type="button" aria-pressed={plannerMode === "draw"} disabled={plannerCompleted} onClick={() => setPlannerMode("draw")}><span>02</span><strong>동선으로 코스 짜기</strong></button>
+                  </div>
+                  <p>{plannerMode === "places" ? "가고 싶은 장소를 골라 방문 순서대로 코스를 만들어보세요." : "지도 위를 차례로 눌러 한 가지 색상의 동선을 그려보세요."}</p>
+                </div>
+                <div className="writer-field planner-stadium-field"><label className="sr-only" htmlFor="route-stadium">구장 선택</label><select id="route-stadium" aria-label="구장 선택" value={stadiumCode} disabled={plannerCompleted} onChange={(event) => changeStadium(event.target.value)}>{stadiums.map((stadium) => <option key={stadium.code} value={stadium.code}>{stadium.name}</option>)}</select></div>
               </div>
-              <NearbyRoutePlanner key={stadiumCode} stadium={current} stops={stops} onChange={changeStops} initialStart={start} onStartChange={setStart} courseName={title} onCourseNameChange={(name) => { setTitle(name); markDirty(); }} onSaveCourse={() => saveCourse()} saving={saving} saveError={error} />
+              <NearbyRoutePlanner key={`${stadiumCode}:${plannerMode}`} plannerMode={plannerMode} stadium={current} stops={stops} onChange={changeStops} initialStart={start} onStartChange={setStart} courseName={title} onCourseNameChange={(name) => { setTitle(name); markDirty(); }} onSaveCourse={() => saveCourse()} saving={saving} saveError={error} startWithAllPlaces={copying} onCompletionChange={setPlannerCompleted} />
             </section>
             <div className="writer-writing writer-panel" id="writer-panel-write" role="tabpanel" aria-labelledby="writer-tab-write" tabIndex={0}>
               <section className="writer-card">
-                <div className="writer-section-title"><span>02</span><h2><label htmlFor="route-content">나만의 이야기를 담아보세요</label></h2></div>
+                <div className="writer-section-title"><span>03</span><h2><label htmlFor="route-content">나만의 이야기를 담아보세요</label></h2></div>
                 <div className="writer-field"><label htmlFor="route-title">루트 제목 <em>*</em></label><input id="route-title" value={title} onChange={(event) => { setTitle(event.target.value); markDirty(); }} maxLength={80} placeholder="예: 친구와 함께, 잠실에서 보내는 하루" required /><span className="writer-field-hint">함께 가는 사람에게 소개하듯 제목을 지어보세요. <b>{title.length}/80</b></span></div>
                 <Editor id="route-content" value={content} format={contentFormat} disabled={saving} onChange={(value, format) => { setContent(value); setContentFormat(format); markDirty(); }} />
                 <p className="writer-field-hint writer-content-tip">방문 순서, 이동 계획, 준비물을 적으면 함께 가는 사람에게 더 도움이 돼요.</p>
@@ -205,7 +217,14 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
             </div>
 
             <aside className="writer-chat-panel writer-panel" id="writer-panel-chat" role="tabpanel" aria-labelledby="writer-tab-chat" tabIndex={0}>
-              <ChatPopup embedded title="장소를 이어 나의 루트로" />
+              <ChatPopup
+                embedded
+                title="채팅으로 만드는 직관 코스"
+                conversationLabel={null}
+                welcomeTitle="어떤 조건의 코스를 원하시나요?"
+                welcomeDescription={null}
+                welcomeLink={{ href: "/routes", label: "코스 둘러보기" }}
+              />
             </aside>
           </fieldset>
           <div className="writer-save-area">

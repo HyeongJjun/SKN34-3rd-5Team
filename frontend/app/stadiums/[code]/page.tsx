@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Icon } from "@/components/icons";
+import { StadiumParkingMapDialog } from "@/components/stadium-parking-map-dialog";
 import { getStadium, getStadiumMapUrl, stadiums } from "@/lib/stadiums";
 
 type StadiumPageProps = { params: Promise<{ code: string }> };
@@ -43,6 +44,7 @@ export default async function StadiumPage({ params }: StadiumPageProps) {
           <dl className="stadium-detail-facts">
             <div><dt>홈팀</dt><dd>{stadium.teams.join(" · ")}</dd></div>
             <div><dt>주소</dt><dd>{stadium.address}</dd></div>
+            <div><dt>주차</dt><dd><StadiumParkingMapDialog stadiumCode={stadium.code} className="stadium-detail-parking-trigger" /></dd></div>
             <div><dt>좌석도</dt><dd><a className="stadium-official-seat-link" href={stadium.seatingMap.sourceUrl} target="_blank" rel="noopener noreferrer">구단 공식 안내에서 확인 ↗</a></dd></div>
           </dl>
           <div className="stadium-detail-actions">

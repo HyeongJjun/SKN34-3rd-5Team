@@ -28,7 +28,7 @@
 .chat-popup-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-shrink: 0; min-height: 43px; padding: 6px 19px; border-bottom: 1px solid #f0f4fa; }
 .chat-popup-toolbar > span { color: #9aA7ba; font-size: 10px; }
 .chat-popup-toolbar select { min-width: 0; max-width: 240px; width: 100%; padding: 4px 20px 4px 0; border: 0; background: transparent; color: #7387a2; font-size: 11px; text-overflow: ellipsis; }
-.chat-popup-new { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; padding: 3px 0 3px 6px; border: 0; background: transparent; color: #6484b1; font-size: 10px; }
+.chat-popup-new { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; margin-left: auto; padding: 3px 0 3px 6px; border: 0; background: transparent; color: #6484b1; font-size: 10px; }
 .chat-popup-new > span { font-size: 16px; line-height: 1; }
 .chat-popup-new:hover { color: #246bf3; }
 .chat-popup-new:disabled, .chat-popup-toolbar select:disabled { opacity: .45; }
@@ -39,8 +39,8 @@
 .chat-popup-welcome h3 { font-size: 19px; color: #324b6a; font-weight: 650; word-break: keep-all; }
 .chat-popup-welcome p { margin-top: 12px; color: #8b9cb3; font-size: 11px; line-height: 1.9; word-break: keep-all; }
 .chat-popup-suggestions { display: flex; justify-content: center; flex-wrap: wrap; gap: 7px; margin-top: 21px; }
-.chat-popup-suggestions button { display: inline-flex; align-items: center; gap: 6px; min-height: 35px; padding: 7px 10px; border: 1px solid #e2eaf7; border-radius: 10px; background: #fff; color: #6d87ac; font-size: 10px; }
-.chat-popup-suggestions button:hover { border-color: #bfd3f2; background: #f4f8ff; color: #246bf3; }
+.chat-popup-suggestions button, .chat-popup-suggestions a { display: inline-flex; align-items: center; gap: 6px; min-height: 35px; padding: 7px 10px; border: 1px solid #e2eaf7; border-radius: 10px; background: #fff; color: #6d87ac; font-size: 10px; text-decoration: none; }
+.chat-popup-suggestions button:hover, .chat-popup-suggestions a:hover { border-color: #bfd3f2; background: #f4f8ff; color: #246bf3; }
 .chat-popup-context { display: flex; align-items: center; justify-content: center; gap: 5px; margin-bottom: 18px; color: #8b9fb9; font-size: 10px; }
 .chat-popup-messages { display: flex; flex-direction: column; gap: 23px; }
 .chat-popup-message { min-width: 0; }
@@ -99,7 +99,7 @@
   .chat-popup-welcome { padding-block: 17px 12px; }
   .chat-popup-welcome h3 { font-size: 18px; }
   .chat-popup-suggestions { gap: 6px; }
-  .chat-popup-suggestions button { padding-inline: 9px; }
+  .chat-popup-suggestions button, .chat-popup-suggestions a { padding-inline: 9px; }
   .chat-popup-composer-area { padding: 10px 12px 11px; }
   .chat-popup-composer textarea { min-height: 27px; font-size: 16px; line-height: 1.65; }
   .chat-popup-footnote { padding-inline: 4px; font-size: 8px; }

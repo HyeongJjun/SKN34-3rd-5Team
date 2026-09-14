@@ -6,6 +6,7 @@ import type { ChatContext, ChatMessage, ChatStatus } from "@/lib/chat/types";
 import { MAX_HISTORY_MESSAGES, MAX_MESSAGE_LENGTH } from "@/lib/chat/types";
 import { getChatStatus, sendChatMessage } from "@/lib/chat/client";
 import { ChatPopup } from "./chat-popup";
+import { createClientId } from "@/lib/client-id";
 
 type ConversationSnapshot = {
   messages: ChatMessage[];
@@ -158,7 +159,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     archiveCurrentConversation();
-    const id = crypto.randomUUID();
+    const id = createClientId();
     setActiveConversationId(id);
     setConversations(current => [{ id, title: "새 대화" }, ...current]);
     historyRef.current = [];

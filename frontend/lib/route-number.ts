@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 const KEY = "kbo-route-numbers-v1";
 const EVENT = "kbo-route-numbers-change";
+const FALLBACK_LOCK_KEY = `${KEY}:lock`;
 const samples: Record<string, string> = {
   "jamsil-day": "000001", "gocheok-day": "000002", "incheon-day": "000003",
   "suwon-day": "000004", "daejeon-day": "000005", "daegu-day": "000006",
@@ -19,11 +20,7 @@ function parse(raw: string | null): Registry {
   return value;
 }
 
-/** Local preview only. Locks serialize allocation across tabs; entries survive route deletion. */
-export async function ensureLocalRouteNumber(id: string): Promise<string> {
-  if (Object.hasOwn(samples, id)) return samples[id];
-  if (!id || !navigator.locks) throw new Error("Route number allocation is unavailable");
-  return navigator.locks.request(KEY, () => {
+function allocateNumber(id: string) {
     const registry = parse(window.localStorage.getItem(KEY));
     if (Object.hasOwn(registry.entries, id)) return registry.entries[id];
     if (registry.last >= 999999) throw new Error("Route numbers exhausted");
@@ -31,7 +28,43 @@ export async function ensureLocalRouteNumber(id: string): Promise<string> {
     window.localStorage.setItem(KEY, JSON.stringify({ last: registry.last + 1, entries: { ...registry.entries, [id]: number } }));
     window.dispatchEvent(new Event(EVENT));
     return number;
-  });
+}
+
+const wait = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+async function withStorageLock<T>(callback: () => T): Promise<T> {
+  const token = `${Date.now()}:${Math.random()}`;
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const now = Date.now();
+    let current: { token?: string; expiresAt?: number } = {};
+    try { current = JSON.parse(window.localStorage.getItem(FALLBACK_LOCK_KEY) ?? "{}"); } catch { current = {}; }
+    if (!current.token || !Number.isFinite(current.expiresAt) || current.expiresAt! <= now) {
+      window.localStorage.setItem(FALLBACK_LOCK_KEY, JSON.stringify({ token, expiresAt: now + 1000 }));
+      await wait(0);
+      let acquired: { token?: string } = {};
+      try { acquired = JSON.parse(window.localStorage.getItem(FALLBACK_LOCK_KEY) ?? "{}"); } catch { acquired = {}; }
+      if (acquired.token === token) {
+        try { return callback(); }
+        finally {
+          try {
+            const latest = JSON.parse(window.localStorage.getItem(FALLBACK_LOCK_KEY) ?? "{}");
+            if (latest.token === token) window.localStorage.removeItem(FALLBACK_LOCK_KEY);
+          } catch { /* Expiry releases an unreadable lease. */ }
+        }
+      }
+    }
+    await wait(12 + Math.floor(Math.random() * 18));
+  }
+  throw new Error("Route number allocation is busy");
+}
+
+/** Local preview only. Entries survive route deletion and remain unique across tabs on HTTP. */
+export async function ensureLocalRouteNumber(id: string): Promise<string> {
+  if (Object.hasOwn(samples, id)) return samples[id];
+  if (!id) throw new Error("Route number allocation is unavailable");
+  if (navigator.locks?.request) return navigator.locks.request(KEY, () => allocateNumber(id));
+  return withStorageLock(() => allocateNumber(id));
 }
 
 function subscribe(callback: () => void) {

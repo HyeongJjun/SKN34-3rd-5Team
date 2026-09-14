@@ -15,7 +15,10 @@ function getConfiguration(env: Environment): ChatStatus & { apiKey?: string; bac
   }
   const model = env.OPENAI_MODEL?.trim() || "gpt-5.6-luna";
   const apiKey = env.OPENAI_API_KEY?.trim();
-  const backendUrl = env.CHAT_BACKEND_URL?.trim();
+  // The active team adapter uses TEAM_BACKEND_URL as the base for its
+  // authenticated session endpoints. Keep the public readiness status aligned
+  // with that adapter.
+  const backendUrl = env.TEAM_BACKEND_URL?.trim();
   const ready = provider === "demo" || (provider === "openai" ? Boolean(apiKey) : Boolean(backendUrl));
   return { provider, model, ready, apiKey, backendUrl };
 }

@@ -134,7 +134,7 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
         </section>
 
         <aside className="community-sidebar" aria-label="커뮤니티 안내">
-          <div className="community-welcome"><span className="community-welcome-icon"><Icon name="route" size={26}/></span><p className="eyebrow">SHARE YOUR DAY</p><h2>나의 직관이<br/>누군가의 좋은 코스로.</h2><p>경기 전 들른 맛집부터<br/>경기 후 여운이 남는 산책길까지.<br/>나만의 하루를 기록해보세요.</p><Link href={writeHref} className="button button-primary">내 루트 작성하기<Icon name="arrow" size={16}/></Link></div>
+          <div className="community-welcome"><span className="community-welcome-icon"><Icon name="route" size={26}/></span><p className="eyebrow">SHARE YOUR DAY</p><h2>나만의 특별한<br/>직관 코스가 있나요?</h2><Link href={writeHref} className="button button-primary">내 루트 작성하기<Icon name="arrow" size={16}/></Link></div>
           <nav className="community-quick-links" aria-label="직관 준비 바로가기"><h2>직관 준비하기</h2><Link href="/stadiums"><Icon name="stadium" size={20}/><span>구장 정보</span><Icon name="chevron" size={14}/></Link><Link href="/guide"><Icon name="book" size={20}/><span>첫 직관 가이드</span><Icon name="chevron" size={14}/></Link></nav>
         </aside>
       </div>
