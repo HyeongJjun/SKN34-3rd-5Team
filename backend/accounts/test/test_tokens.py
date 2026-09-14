@@ -1,4 +1,6 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
@@ -62,19 +64,20 @@ class JWTPasswordRegressionTest(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(mail.outbox), 1)
-        return mail.outbox[0].body.split("/password-reset/")[1].strip().split("/")[:2]
+        link = mail.outbox[0].body.split(": http", 1)[1].strip()
+        params = urlparse("http" + link).fragment
+        query = parse_qs(params)
+        return query["uid"][0], query["token"][0]
 
     def change(self, fields, access=None, uid=None, token=None):
         url = reverse("password_reset")
-        query = {}
         if uid is not None:
-            query["uid"] = uid
+            fields = {**fields, "uid": uid}
         if token is not None:
-            query["token"] = token
+            fields = {**fields, "token": token}
         return self.client.post(
             url,
             fields,
-            query_params=query,
             format="json",
             **({"HTTP_AUTHORIZATION": f"Bearer {access}"} if access else {}),
         )
@@ -219,6 +222,15 @@ class JWTPasswordRegressionTest(APITestCase):
                 self.assert_pair_valid(pair)
                 self.user.refresh_from_db()
                 self.assertTrue(self.user.check_password(self.password))
+
+    def test_expired_reset_link_is_rejected(self):
+        pair = self.login()
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        token = default_token_generator.make_token(self.user)
+        with patch("django.contrib.auth.tokens.PasswordResetTokenGenerator._now", return_value=datetime.now() + timedelta(days=4)):
+            response = self.change({"password": self.reset_password, "re_password": self.reset_password}, uid=uid, token=token)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_pair_valid(pair)
 
     def test_refresh_rejects_malformed_expired_wrong_type_and_missing_hash(self):
         malformed = "not-a-jwt"
