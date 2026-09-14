@@ -35,8 +35,10 @@ const route = changes => ({
 test("create sends ordered stops and stores only the returned edit token", async () => {
   const api = harness();
   const saved = await api.persistCourse(route(), async (url, init) => {
-    assert.equal(url, "/course-api");
+    assert.equal(url, "/api/courses/");
     assert.equal(init.method, "POST");
+    assert.equal(init.redirect, "error");
+    assert.ok(init.signal instanceof AbortSignal);
     assert.deepEqual(JSON.parse(init.body), {
       title: "잠실 직관 코스", stadium: "잠실야구장", content: "", contentFormat: "", duration: "반나절", tags: [],
       startLat: 37.5, startLng: 127.1, stops: [{ name: "카페", category: "카페", placeId: "p1", lat: 37.51, lng: 127.07, position: 0 }],
@@ -55,13 +57,13 @@ test("list ownership, update, and delete all use the per-course token", async ()
   const listed = await api.fetchCourses(async () => Response.json([apiCourse({})]));
   assert.equal(listed[0].owned, true);
   await api.persistCourse(route({ id }), async (url, init) => {
-    assert.equal(url, `/course-api/${id}`);
+    assert.equal(url, `/api/courses/${id}/`);
     assert.equal(init.method, "PATCH");
     assert.equal(init.headers["X-Course-Edit-Token"], "edit-secret");
     return Response.json(apiCourse({}));
   });
   await api.removeCourse(id, async (url, init) => {
-    assert.equal(url, `/course-api/${id}`);
+    assert.equal(url, `/api/courses/${id}/`);
     assert.equal(init.headers["X-Course-Edit-Token"], "edit-secret");
     return new Response(null, { status: 204 });
   });
@@ -83,7 +85,7 @@ test("token storage failure keeps session edit access and never retries POST", a
   assert.match(created.saveWarning, /새로고침하면 읽기 전용/);
   assert.equal(api.storage.size, 0);
   await api.persistCourse({ ...created, title: "변경" }, async (url, init) => {
-    assert.equal(url, `/course-api/${created.id}`);
+    assert.equal(url, `/api/courses/${created.id}/`);
     assert.equal(init.method, "PATCH");
     assert.equal(init.headers["X-Course-Edit-Token"], "edit-secret");
     return Response.json(apiCourse({ title: "변경" }));
@@ -100,4 +102,36 @@ test("clearing an existing start sends explicit null coordinates", async () => {
     assert.equal(body.startLng, null);
     return Response.json(apiCourse({}));
   });
+});
+
+test("course requests have a bounded timeout and a useful network error", async () => {
+  const api = harness();
+  await assert.rejects(api.fetchCourses(async (_url, init) => {
+    assert.ok(init.signal instanceof AbortSignal);
+    throw new TypeError("network failed");
+  }), /코스 서버에 연결하지 못했어요/);
+  assert.match(source, /AbortSignal\.timeout\(40000\)/);
+  assert.doesNotMatch(source, /COURSE_BACKEND_URL|["'`]\/course-api/);
+});
+
+test("database sample metadata keeps legacy links and original display fields", async () => {
+  const api = harness();
+  const [sample] = await api.fetchCourses(async () => Response.json([apiCourse({
+    sampleId: "fan-sajik-date", description: "원본 설명", cover: "/images/stadium-day.jpg",
+    likes: 7, views: 9, isSample: true,
+    stops: [
+      { position: 0, name: "사직야구장", category: "경기 관람", lat: 35.194, lng: 129.059, isDrawnPoint: true },
+      { position: 1, name: "산책 후보 지점", category: "직접 지정", lat: 35.197, lng: 129.057 },
+      { position: 2, name: "마무리 지점", category: "직접 지정", lat: 35.199, lng: 129.059 },
+    ],
+  })]));
+  assert.equal(sample.id, "fan-sajik-date");
+  assert.equal(sample.description, "원본 설명");
+  assert.equal(sample.cover, "/images/stadium-day.jpg");
+  assert.equal(sample.isSample, true);
+  assert.equal(sample.owned, false);
+  assert.equal(sample.likes, 7);
+  assert.equal(sample.views, 9);
+  assert.equal(sample.stops.length, 3);
+  assert.equal(sample.stops[0].isDrawnPoint, true);
 });

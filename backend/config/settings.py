@@ -31,7 +31,13 @@ SECRET_KEY = 'django-insecure-xg6ypt+%hw2k@xak+x#7bqqpn(-^vu73^9qh3xnh*=^$pn6jg*
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in (os.getenv("DJANGO_ALLOWED_HOSTS") or "localhost,127.0.0.1,[::1]").split(",")
+    if host.strip()
+]
+if "*" in ALLOWED_HOSTS:
+    raise ValueError("DJANGO_ALLOWED_HOSTS must list explicit hosts")
 
 AUTH_USER_MODEL = 'accounts.CustomUser'
 

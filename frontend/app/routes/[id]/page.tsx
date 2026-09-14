@@ -46,7 +46,7 @@ export default function RouteDetailPage({ params }: { params: Promise<{ id: stri
   }, [ready, route, id]);
 
   if (!ready || deleting) return <RouteDetailSkeleton/>;
-  if (!route && loadError) return <main className="container route-empty route-not-found"><h1>{loadError}</h1><p>잠시 후 다시 시도하거나 커뮤니티 목록의 저장된 코스와 샘플 코스를 둘러보세요.</p><button type="button" className="button button-primary" onClick={() => void retryRoutes()}>다시 불러오기</button><Link className="button button-secondary" href="/routes">커뮤니티 목록</Link></main>;
+  if (!route && loadError) return <main className="container route-empty route-not-found"><h1>{loadError}</h1><p>잠시 후 다시 시도해 주세요.</p><button type="button" className="button button-primary" onClick={() => void retryRoutes()}>다시 불러오기</button><Link className="button button-secondary" href="/routes">커뮤니티 목록</Link></main>;
   if (!route) return <main className="container route-empty route-not-found"><h1>코스를 찾을 수 없어요</h1><p>삭제된 코스이거나 존재하지 않는 코스일 수 있어요.</p><Link className="button button-primary" href="/routes">커뮤니티 목록</Link></main>;
 
   const removeRoute = async () => {

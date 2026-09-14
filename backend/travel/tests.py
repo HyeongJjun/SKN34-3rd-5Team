@@ -1,8 +1,14 @@
+import json
+import uuid
+from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth.hashers import check_password
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.urls import Resolver404, resolve, reverse
 from rest_framework.test import APIClient
 
@@ -72,6 +78,39 @@ class CourseApiTests(TestCase):
         self.assertEqual(self.client.delete(url, HTTP_X_COURSE_EDIT_TOKEN=created.data["editToken"]).status_code, 204)
         self.assertFalse(Course.objects.filter(pk=created.data["id"]).exists())
 
+    def test_course_writes_require_same_origin_without_trusting_forwarded_headers(self):
+        for host in ("localhost:43123", "127.0.0.1:43124"):
+            with self.subTest(host=host):
+                response = self.client.post(
+                    "/courses/", course_data(), format="json",
+                    HTTP_HOST=host, HTTP_ORIGIN=f"http://{host}",
+                )
+                self.assertEqual(response.status_code, 201, response.data)
+
+        created = self.create_course()
+        url = f"/courses/{created.data['id']}/"
+        forwarded = {
+            "HTTP_ORIGIN": "https://evil.example",
+            "HTTP_X_FORWARDED_HOST": "evil.example",
+            "HTTP_X_FORWARDED_PROTO": "https",
+        }
+        self.assertEqual(self.client.post("/courses/", course_data(), format="json", **forwarded).status_code, 403)
+        self.assertEqual(self.client.patch(url, {"title": "거부"}, format="json", **forwarded).status_code, 403)
+        self.assertEqual(self.client.delete(url, **forwarded).status_code, 403)
+        self.assertEqual(self.client.post("/courses/", course_data(), format="json", HTTP_ORIGIN="null").status_code, 403)
+        self.assertEqual(self.client.post(
+            "/courses/", course_data(), format="json",
+            HTTP_ORIGIN="http://testserver", HTTP_SEC_FETCH_SITE="cross-site",
+        ).status_code, 403)
+
+    def test_course_write_body_is_bounded_json(self):
+        self.assertEqual(self.client.generic(
+            "POST", "/courses/", b"{}", content_type="text/plain", HTTP_ORIGIN="http://testserver",
+        ).status_code, 415)
+        self.assertEqual(self.client.generic(
+            "POST", "/courses/", b"x" * 64001, content_type="application/json", HTTP_ORIGIN="http://testserver",
+        ).status_code, 413)
+
     def test_validation_rejects_invalid_course_shapes(self):
         invalid = (
             course_data(title=""),
@@ -89,7 +128,7 @@ class CourseApiTests(TestCase):
         for payload in invalid:
             with self.subTest(payload=payload):
                 self.assertEqual(self.client.post("/courses/", payload, format="json").status_code, 400)
-        self.assertEqual(Course.objects.count(), 0)
+        self.assertEqual(Course.objects.filter(is_sample=False).count(), 0)
 
     def test_non_finite_coordinates_never_persist(self):
         invalid = tuple(
@@ -104,8 +143,8 @@ class CourseApiTests(TestCase):
         for payload in invalid:
             with self.subTest(payload=payload):
                 self.assertEqual(self.client.post("/courses/", payload, format="json").status_code, 400)
-        self.assertEqual(Course.objects.count(), 0)
-        self.assertEqual(CourseStop.objects.count(), 0)
+        self.assertEqual(Course.objects.filter(is_sample=False).count(), 0)
+        self.assertEqual(CourseStop.objects.filter(course__is_sample=False).count(), 0)
 
         created = self.create_course()
         course = Course.objects.get(pk=created.data["id"])
@@ -194,3 +233,110 @@ class CourseApiTests(TestCase):
         self.assertEqual(resolve(f"/courses/{created.data['id']}/").url_name, "course-detail")
         with self.assertRaises(Resolver404):
             resolve("/api/courses/")
+
+
+class CourseSampleTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.samples = json.loads((Path(__file__).parent / "seed_data" / "course_samples_v1.json").read_text(encoding="utf-8"))
+
+    def test_seed_matches_the_immutable_course_snapshot(self):
+        self.assertEqual(Course.objects.filter(is_sample=True).count(), 19)
+        self.assertEqual(CourseStop.objects.filter(course__is_sample=True).count(), 58)
+        self.assertEqual(sum(len(sample["tags"]) for sample in self.samples), 43)
+        for sample in self.samples:
+            with self.subTest(sample=sample["id"]):
+                course = Course.objects.get(source_id=sample["id"])
+                self.assertEqual(course.pk, uuid.uuid5(uuid.NAMESPACE_URL, f"kbo-trip/course/{sample['id']}"))
+                self.assertEqual(
+                    (course.title, course.stadium, course.description, course.content, course.content_format, course.duration, course.cover, course.tags, course.author, course.likes, course.views),
+                    (sample["title"], sample["stadium"], sample["description"], sample["content"], sample.get("contentFormat", ""), sample["duration"], sample["cover"], sample["tags"], sample["author"], sample["likes"], sample.get("views", 0)),
+                )
+                self.assertEqual(course.created_at, datetime.fromisoformat(sample["createdAt"]))
+                self.assertEqual(course.updated_at, course.created_at)
+                self.assertTrue(course.edit_token_hash.startswith("!"))
+                self.assertFalse(check_password("any-token", course.edit_token_hash))
+                self.assertEqual(
+                    list(course.stops.values("position", "name", "lat", "lng", "category", "place_id", "visit_id", "address", "tour_content_id", "is_map_point", "is_drawn_point")),
+                    [
+                        {
+                            "position": position,
+                            "name": stop["name"],
+                            "lat": stop["lat"],
+                            "lng": stop["lng"],
+                            "category": stop["category"],
+                            "place_id": stop.get("placeId"),
+                            "visit_id": stop.get("visitId"),
+                            "address": stop.get("address"),
+                            "tour_content_id": stop.get("tourContentId"),
+                            "is_map_point": stop.get("isMapPoint"),
+                            "is_drawn_point": stop.get("isDrawnPoint"),
+                        }
+                        for position, stop in enumerate(sample["stops"])
+                    ],
+                )
+
+    def test_samples_are_read_only_and_can_be_cloned_as_ordinary_courses(self):
+        sample = Course.objects.get(source_id="fan-sajik-date")
+        self.assertEqual(APIClient().patch(f"/courses/{sample.pk}/", {"title": "변경"}, format="json", HTTP_X_COURSE_EDIT_TOKEN="wrong").status_code, 403)
+        payload = course_data(
+            title=sample.title,
+            stadium=sample.stadium,
+            content=sample.content,
+            contentFormat=sample.content_format,
+            duration=sample.duration,
+            tags=sample.tags,
+            stops=[
+                {
+                    "position": stop.position,
+                    "name": stop.name,
+                    "lat": stop.lat,
+                    "lng": stop.lng,
+                    "category": stop.category,
+                    "placeId": stop.place_id,
+                    "isDrawnPoint": stop.is_drawn_point,
+                }
+                for stop in sample.stops.all()
+            ],
+            isSample=True,
+            sampleId="client-controlled",
+            description="client-controlled",
+            cover="/client-controlled.jpg",
+            likes=999,
+            views=999,
+        )
+        payload.pop("startLat")
+        payload.pop("startLng")
+        response = APIClient().post("/courses/", payload, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        clone = Course.objects.get(pk=response.data["id"])
+        self.assertFalse(clone.is_sample)
+        self.assertIsNone(clone.source_id)
+        self.assertEqual((clone.description, clone.cover, clone.likes, clone.views), ("", "", 0, 0))
+        self.assertEqual(clone.stops.count(), 3)
+        self.assertNotIn("sampleId", response.data)
+        self.assertFalse(response.data["isSample"])
+
+    def test_list_exposes_each_sample_once_with_legacy_id_metadata(self):
+        response = APIClient().get("/courses/")
+        self.assertEqual(response.status_code, 200)
+        samples = [course for course in response.data if course["isSample"]]
+        self.assertEqual(len(samples), 19)
+        self.assertEqual(len({course["sampleId"] for course in samples}), 19)
+        copied = next(course for course in samples if course["sampleId"] == "fan-sajik-date")
+        self.assertEqual([stop["name"] for stop in copied["stops"]], ["사직야구장", "산책 후보 지점", "마무리 지점"])
+
+
+class CourseSampleMigrationTests(TransactionTestCase):
+    def test_reverse_noop_and_reapply_preserve_custom_rows_and_do_not_duplicate_samples(self):
+        custom = Course.objects.create(
+            title="사용자 코스", stadium="잠실야구장", duration="반나절", tags=[], author="익명", edit_token_hash="custom-hash"
+        )
+        CourseStop.objects.create(course=custom, position=0, name="사용자 장소", lat=37.5, lng=127.1, category="카페")
+        MigrationExecutor(connection).migrate([("travel", "0003_course_sample_fields")])
+        MigrationExecutor(connection).migrate([("travel", "0004_seed_course_samples")])
+        custom.refresh_from_db()
+        self.assertEqual(custom.edit_token_hash, "custom-hash")
+        self.assertEqual(list(custom.stops.values_list("name", flat=True)), ["사용자 장소"])
+        self.assertEqual(Course.objects.filter(is_sample=True).count(), 19)
+        self.assertEqual(CourseStop.objects.filter(course__is_sample=True).count(), 58)

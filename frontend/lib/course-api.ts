@@ -8,6 +8,7 @@ type ApiStop = RouteStop & { position: number };
 type ApiCourse = {
   id: string; title: string; stadium: string; content?: string; contentFormat?: "html";
   duration: string; tags: string[]; author: string; createdAt: string; updatedAt: string;
+  sampleId?: string; description?: string; cover?: string; likes?: number; views?: number; isSample?: boolean;
   startLat?: number; startLng?: number; stops: ApiStop[]; editToken?: string;
 };
 
@@ -25,12 +26,12 @@ function rememberToken(id: string, value: string) {
 function routeFromApi(value: ApiCourse, owned = Boolean(token(value.id)), saveWarning = ""): TripRoute {
   if (!value || typeof value.id !== "string" || !Array.isArray(value.stops)) throw new Error("코스 서버 응답을 확인해 주세요.");
   const stops = [...value.stops].sort((a, b) => a.position - b.position).map(stop => { const copy = { ...stop }; Reflect.deleteProperty(copy, "position"); return copy; });
-  const description = (value.content?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || stops.map(stop => stop.name).join(" → ")).slice(0, 100);
+  const description = value.description || (value.content?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || stops.map(stop => stop.name).join(" → ")).slice(0, 100);
   return {
-    id: value.id, title: value.title, stadium: value.stadium, description, content: value.content ?? "",
+    id: value.sampleId ?? value.id, title: value.title, stadium: value.stadium, description, content: value.content ?? "",
     ...(value.contentFormat ? { contentFormat: value.contentFormat } : {}), tags: value.tags, duration: value.duration,
-    cover: "/images/stadium-night.jpg", stops, ...(value.startLat !== undefined && value.startLng !== undefined ? { start: { lat: value.startLat, lng: value.startLng } } : {}),
-    author: value.author, likes: 0, views: 0, isSample: false, owned, createdAt: value.createdAt, ...(saveWarning ? { saveWarning } : {}),
+    cover: value.cover || "/images/stadium-night.jpg", stops, ...(value.startLat !== undefined && value.startLng !== undefined ? { start: { lat: value.startLat, lng: value.startLng } } : {}),
+    author: value.author, likes: value.likes ?? 0, views: value.views ?? 0, isSample: value.isSample ?? false, owned: value.isSample ? false : owned, createdAt: value.createdAt, ...(saveWarning ? { saveWarning } : {}),
   };
 }
 
@@ -48,8 +49,13 @@ async function json(response: Response) {
   return value;
 }
 
+async function courseRequest(fetcher: typeof fetch, url: string, init: RequestInit = {}) {
+  try { return await fetcher(url, { ...init, redirect: "error", signal: AbortSignal.timeout(40000) }); }
+  catch { throw new Error("코스 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요."); }
+}
+
 export async function fetchCourses(fetcher: typeof fetch = fetch): Promise<TripRoute[]> {
-  const value = await json(await fetcher("/course-api", { cache: "no-store" }));
+  const value = await json(await courseRequest(fetcher, "/api/courses/", { cache: "no-store" }));
   if (!Array.isArray(value)) throw new Error("코스 서버 응답을 확인해 주세요.");
   return value.map(course => routeFromApi(course));
 }
@@ -57,7 +63,7 @@ export async function fetchCourses(fetcher: typeof fetch = fetch): Promise<TripR
 export async function persistCourse(route: TripRoute, fetcher: typeof fetch = fetch): Promise<TripRoute> {
   const editToken = route.id ? token(route.id) : "";
   if (route.id && route.owned && !route.legacy && !editToken) throw new Error("이 코스의 편집 토큰을 찾을 수 없어 읽기만 가능해요.");
-  const response = await json(await fetcher(editToken ? `/course-api/${encodeURIComponent(route.id)}` : "/course-api", {
+  const response = await json(await courseRequest(fetcher, editToken ? `/api/courses/${encodeURIComponent(route.id)}/` : "/api/courses/", {
     method: editToken ? "PATCH" : "POST",
     headers: { "Content-Type": "application/json", ...(editToken ? { "X-Course-Edit-Token": editToken } : {}) },
     body: JSON.stringify(payload(route, Boolean(editToken))),
@@ -73,7 +79,7 @@ export async function persistCourse(route: TripRoute, fetcher: typeof fetch = fe
 export async function removeCourse(id: string, fetcher: typeof fetch = fetch): Promise<void> {
   const editToken = token(id);
   if (!editToken) throw new Error("이 코스의 편집 토큰을 찾을 수 없어 삭제할 수 없어요.");
-  await json(await fetcher(`/course-api/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "X-Course-Edit-Token": editToken } }));
+  await json(await courseRequest(fetcher, `/api/courses/${encodeURIComponent(id)}/`, { method: "DELETE", headers: { "X-Course-Edit-Token": editToken } }));
   sessionTokens.delete(id);
   try { window.localStorage.removeItem(`${TOKEN_PREFIX}${id}`); } catch {}
 }

@@ -2,13 +2,35 @@ import secrets
 
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import generics, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import APIException, PermissionDenied
+from rest_framework.parsers import JSONParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 
 from .models import Course
 from .serializers import CourseSerializer
+
+
+class CoursePayloadTooLarge(APIException):
+    status_code = 413
+    default_detail = "코스 내용이 너무 깁니다."
+
+
+class CourseWriteProtectionMixin:
+    parser_classes = (JSONParser,)
+
+    def initial(self, request, *args, **kwargs):
+        if request.method in {"POST", "PATCH", "DELETE"}:
+            origin = request.headers.get("Origin")
+            if request.headers.get("Sec-Fetch-Site", "").lower() == "cross-site" or (
+                origin is not None and origin != f"{request.scheme}://{request.get_host()}"
+            ):
+                raise PermissionDenied("같은 사이트에서 요청해 주세요.")
+            content_length = request.META.get("CONTENT_LENGTH", "")
+            if (content_length and not content_length.isdecimal()) or int(content_length or 0) > 64000 or len(request.body) > 64000:
+                raise CoursePayloadTooLarge()
+        return super().initial(request, *args, **kwargs)
 
 
 class CourseWriteThrottle(SimpleRateThrottle):
@@ -18,7 +40,7 @@ class CourseWriteThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
 
 
-class CourseListCreateView(generics.ListCreateAPIView):
+class CourseListCreateView(CourseWriteProtectionMixin, generics.ListCreateAPIView):
     queryset = Course.objects.prefetch_related("stops")
     serializer_class = CourseSerializer
     permission_classes = (AllowAny,)
@@ -36,7 +58,7 @@ class CourseListCreateView(generics.ListCreateAPIView):
         return Response(data, status=status.HTTP_201_CREATED)
 
 
-class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
+class CourseDetailView(CourseWriteProtectionMixin, generics.RetrieveUpdateDestroyAPIView):
     queryset = Course.objects.prefetch_related("stops")
     serializer_class = CourseSerializer
     permission_classes = (AllowAny,)

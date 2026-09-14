@@ -5,16 +5,14 @@ import ts from "typescript";
 
 const source = readFileSync(new URL("../lib/routes.ts", import.meta.url), "utf8");
 const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } });
-const examplesSource = readFileSync(new URL("../lib/additional-route-examples.ts", import.meta.url), "utf8");
-const examples = { exports: {} };
-new Function("module", "exports", ts.transpileModule(examplesSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(examples, examples.exports);
 
 function apiHarness({ legacy = [], fetched = [], loadFailure = false } = {}) {
   let blocked = false;
   let nextId = 1;
+  let fetchCount = 0;
   const storage = new Map(legacy.length ? [["kbo-trip-routes-v1", JSON.stringify(legacy)]] : []);
   const adapter = {
-    fetchCourses: async () => { if (loadFailure) throw new Error("offline"); return fetched; },
+    fetchCourses: async () => { fetchCount += 1; if (loadFailure) throw new Error("offline"); return fetched; },
     persistCourse: async route => {
       if (blocked) throw new Error("저장 실패");
       return { ...route, id: !route.id || route.legacy ? `server-${nextId++}` : route.id, owned: true, legacy: false };
@@ -23,10 +21,10 @@ function apiHarness({ legacy = [], fetched = [], loadFailure = false } = {}) {
   };
   const react = { useEffect() {}, useMemo: callback => callback(), useSyncExternalStore: (_subscribe, snapshot) => snapshot() };
   const browser = { localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) }, addEventListener() {}, removeEventListener() {}, dispatchEvent() {} };
-  const requireDependency = name => name === "./additional-route-examples" ? examples.exports : name === "./course-api" ? adapter : name === "react" ? react : (() => { throw new Error(`unexpected import: ${name}`); })();
+  const requireDependency = name => name === "./course-api" ? adapter : name === "react" ? react : (() => { throw new Error(`unexpected import: ${name}`); })();
   const testModule = { exports: {} };
   new Function("require", "module", "exports", "window", outputText)(requireDependency, testModule, testModule.exports, browser);
-  return { ...testModule.exports, storage, block: () => { blocked = true; }, allow: () => { blocked = false; }, recover: () => { loadFailure = false; } };
+  return { ...testModule.exports, storage, block: () => { blocked = true; }, allow: () => { blocked = false; }, recover: () => { loadFailure = false; }, fetchCount: () => fetchCount };
 }
 
 const course = (id = "") => ({
@@ -90,13 +88,28 @@ test("legacy browser courses remain editable until successful migration", async 
   assert.equal(updated.legacySourceId, legacy.id);
 });
 
-test("course load errors keep samples visible and clear after retry", async () => {
+test("course load errors stay honest and clear after retry", async () => {
   const api = apiHarness({ loadFailure: true, fetched: [course("server-listed")] });
   await api.retryRoutes();
   assert.match(api.useRoutesError(), /불러오지 못했어요/);
-  assert.ok(api.getRoutes().some(item => item.isSample));
+  assert.deepEqual(api.getRoutes(), []);
   api.recover();
   await api.retryRoutes();
   assert.equal(api.useRoutesError(), "");
   assert.ok(api.getRoutes().some(item => item.id === "server-listed"));
+});
+
+test("database samples are listed once and an empty database stays empty", async () => {
+  const samples = Array.from({ length: 19 }, (_, index) => ({ ...course(index === 0 ? "fan-sajik-date" : `sample-${index}`), isSample: true }));
+  const api = apiHarness({ fetched: samples });
+  await api.retryRoutes();
+  assert.equal(api.fetchCount(), 1);
+  assert.equal(api.getRoutes().length, 19);
+  assert.equal(new Set(api.getRoutes().map(route => route.id)).size, 19);
+  assert.equal(api.getRoutes().find(route => route.id === "fan-sajik-date").stops.length, 1);
+
+  const empty = apiHarness();
+  await empty.retryRoutes();
+  assert.deepEqual(empty.getRoutes(), []);
+  assert.doesNotMatch(source, /sampleRoutes|additional-route-examples/);
 });

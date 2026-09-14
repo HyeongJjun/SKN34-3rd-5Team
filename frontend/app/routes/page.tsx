@@ -78,7 +78,7 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
         <section className="community-board" aria-labelledby="community-board-heading">
           <div className="community-board-heading"><h2 id="community-board-heading" ref={resultsHeading} tabIndex={-1}>직관 루트 공유</h2><span>우리의 야구, 우리의 하루</span></div>
           {showDeleted && <div className="route-feedback" role="status"><span>게시글을 삭제했어요.</span><button type="button" aria-label="삭제 안내 닫기" onClick={() => setShowDeleted(false)}>×</button></div>}
-          {loadError && <div className="route-error" role="alert"><span>{loadError} 저장된 코스와 샘플 코스를 표시하고 있어요.</span> <button type="button" onClick={() => void retryRoutes()}>다시 불러오기</button></div>}
+          {loadError && <div className="route-error" role="alert"><span>{loadError} 이전 버전의 브라우저 코스만 표시될 수 있어요.</span> <button type="button" onClick={() => void retryRoutes()}>다시 불러오기</button></div>}
 
           <div className="community-stadiums" role="group" aria-label="구장으로 필터">
             {stadiums.map(item => <button type="button" key={item} className={stadium === item ? "is-active" : ""} aria-pressed={stadium === item} onClick={() => { setStadium(item); setPage(1); }}>{item}</button>)}

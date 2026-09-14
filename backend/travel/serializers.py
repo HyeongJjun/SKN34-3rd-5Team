@@ -32,6 +32,8 @@ class CourseStopSerializer(serializers.ModelSerializer):
 
 
 class CourseSerializer(serializers.ModelSerializer):
+    sampleId = serializers.CharField(source="source_id", read_only=True)
+    isSample = serializers.BooleanField(source="is_sample", read_only=True)
     content = serializers.CharField(required=False, allow_blank=True, max_length=12000)
     contentFormat = serializers.ChoiceField(source="content_format", choices=("", "html"), required=False, allow_blank=True)
     startLat = FiniteFloatField(source="start_lat", min_value=-90, max_value=90, required=False, allow_null=True)
@@ -42,8 +44,8 @@ class CourseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Course
-        fields = ("id", "title", "stadium", "content", "contentFormat", "duration", "tags", "startLat", "startLng", "author", "createdAt", "updatedAt", "stops")
-        read_only_fields = ("id", "author", "createdAt", "updatedAt")
+        fields = ("id", "sampleId", "title", "stadium", "description", "content", "contentFormat", "duration", "cover", "tags", "startLat", "startLng", "author", "likes", "views", "isSample", "createdAt", "updatedAt", "stops")
+        read_only_fields = ("id", "sampleId", "description", "cover", "author", "likes", "views", "isSample", "createdAt", "updatedAt")
 
     def validate_title(self, value):
         value = value.strip()
@@ -99,6 +101,8 @@ class CourseSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
+        if data["sampleId"] is None:
+            data.pop("sampleId")
         if not data["contentFormat"]:
             data.pop("contentFormat")
         if data["startLat"] is None:
