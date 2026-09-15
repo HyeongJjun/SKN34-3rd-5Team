@@ -1,7 +1,17 @@
 from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
-from .models import CommunityComment, CommunityPost, FREE_CATEGORIES, TEAM_CATEGORIES, TEAM_CODES
+from .models import CommunityComment, CommunityImage, CommunityPost, FREE_CATEGORIES, TEAM_CATEGORIES, TEAM_CODES
+
+
+@extend_schema_serializer(component_name="CommunityImageMetadata")
+class CommunityImageMetadataSerializer(serializers.ModelSerializer):
+    contentType = serializers.CharField(source="content_type", read_only=True)
+
+    class Meta:
+        model = CommunityImage
+        fields = ("id", "contentType", "size", "width", "height")
+        read_only_fields = fields
 
 
 @extend_schema_serializer(component_name="CommunityPost")
@@ -17,6 +27,7 @@ class CommunityPostSerializer(serializers.ModelSerializer):
     downvotes = serializers.SerializerMethodField()
     commentCount = serializers.SerializerMethodField()
     isSample = serializers.BooleanField(source="is_sample", read_only=True)
+    images = CommunityImageMetadataSerializer(many=True, read_only=True)
     category = serializers.ChoiceField(choices=TEAM_CATEGORIES)
     content = serializers.CharField(max_length=20000, allow_blank=False, trim_whitespace=True)
 
@@ -25,6 +36,7 @@ class CommunityPostSerializer(serializers.ModelSerializer):
         fields = (
             "id", "sourceId", "postNumber", "board", "teamCode", "authorId", "author", "title", "content",
             "category", "createdAt", "views", "recommendations", "downvotes", "commentCount", "isSample",
+            "images",
         )
         read_only_fields = ("author",)
 

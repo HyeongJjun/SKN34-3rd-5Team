@@ -39,6 +39,7 @@ class CommunityPostApiTests(APITestCase):
             "content": "늘 내야에서만 보다가 이번엔 외야로 가볼까 합니다.\n\n공이 뜨면 홈런인지 평범한 플라이인지 구분이 잘 되는지 궁금해요. 중계로 볼 때랑 느낌이 많이 다를 것 같아서요. LG 응원하면서 수비 위치도 같이 보고 싶습니다.",
             "category": "좌석·예매", "createdAt": None, "views": 0, "recommendations": 0, "downvotes": 0,
             "commentCount": 0, "isSample": True,
+            "images": [],
         })
         self.assertEqual(len(self.client.get("/community/posts/?board=free").data), 50)
         self.assertEqual(len(self.client.get("/community/posts/?board=teams&team=lt").data), 30)
