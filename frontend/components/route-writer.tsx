@@ -93,7 +93,7 @@ function WriterForm({ stadiums, initial, existing, copying = false }: { stadiums
   const [start, setStart] = useState<TripRoute["start"]>(restoredDraft ? restoredDraft.start : existing?.start);
   const [tab, setTab] = useState<WriterTab>(restoredDraft?.tab ?? "write");
   const [travelMode, setTravelMode] = useState<TravelMode>(restoredDraft?.travelMode ?? "walk");
-  const [plannerMode, setPlannerMode] = useState<PlannerMode>(() => stops.some(stop => stop.isDrawnPoint) ? "draw" : "places");
+  const [plannerMode, setPlannerMode] = useState<PlannerMode>(() => stops.some(stop => stop.isMapPoint && stop.category === "동선 지점") ? "draw" : "places");
   const [plannerCompleted, setPlannerCompleted] = useState(false);
   const [error, setError] = useState("");
   const [draftStatus, setDraftStatus] = useState(() => storedDraft.error ? "브라우저 저장 공간을 읽지 못했어요. 변경 내용은 이 화면에만 남아 있어요." : storedDraft.raw && (!storedDraft.draft || !restoredDraft) ? "기존 임시저장 데이터를 확인할 수 없어 덮어쓰지 않았어요." : memoryDraft ? "이 화면에 남아 있던 미저장 변경을 복원했어요." : restoredDraft && storedDraft.draft ? `${new Date(storedDraft.draft.updatedAt).toLocaleString("ko-KR")} 임시저장을 복원했어요.` : "변경 사항 없음");

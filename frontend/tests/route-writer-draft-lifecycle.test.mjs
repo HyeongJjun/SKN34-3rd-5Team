@@ -40,3 +40,9 @@ test("planner modes and tailored chat preserve server save and completion locks"
   assert.match(popup, /chat\.streaming \? <ChatAnswer/);
   assert.match(popup, /chat\.uncertain \? chat\.onReset : chat\.onRetry/);
 });
+
+test("planner draft reentry distinguishes draw-only points and map pickers cannot race", () => {
+  assert.match(source, /stops\.some\(stop => stop\.isMapPoint && stop\.category === "동선 지점"\) \? "draw" : "places"/);
+  assert.doesNotMatch(source, /stops\.some\(stop => stop\.isDrawnPoint\) \? "draw" : "places"/);
+  assert.match(planner, /onTravelModeChange, \(\) => \{[\s\S]*?mapLocationRequest\.current \+= 1;[\s\S]*?setMapLocationPicking\(false\);[\s\S]*?setMapLocationStatus\("idle"\);/);
+});

@@ -83,28 +83,32 @@ function LoadedPlanner({ maps, plannerMode = "places", stadium, stops, onChange:
     onCompletionChange?.(courseCompleted);
     return () => onCompletionChange?.(false);
   }, [courseCompleted, onCompletionChange]);
+  const [mapLocationPicking, setMapLocationPicking] = useState(false);
+  const [mapLocation, setMapLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [mapLocationStatus, setMapLocationStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [mapLocationMessage, setMapLocationMessage] = useState("");
+  const mapLocationRequest = useRef(0);
+  useEffect(() => () => { mapLocationRequest.current += 1; }, []);
   const travel = useCourseDirections(stops, true, initialStart, (point) => {
     const current = stopSnapshot.current;
     // An embedded origin is replaced, not retained as a new waypoint.
     if (initialStart || !(current[0]?.isMapPoint || current[0]?.isDrawnPoint)) return false;
     onChange([{ ...point, name: "출발지", category: "출발", placeId: "route:origin", isDrawnPoint: true }, ...current.slice(1)]);
     return true;
-  }, initialTravelMode, onTravelModeChange);
+  }, initialTravelMode, onTravelModeChange, () => {
+    mapLocationRequest.current += 1;
+    setMapLocationPicking(false);
+    setMapLocationStatus("idle");
+  });
   useEffect(() => { onStartChange(travel.location ?? undefined); }, [travel.location, onStartChange]);
   const canComplete = stops.length > 0 && !travel.picking && !travel.locating && (travel.origin === "first" || Boolean(travel.location));
   const canSaveCourse = canComplete && Boolean(courseName.trim()) && !saving;
   const separateStart = travel.origin !== "first";
-  const [mapLocationPicking, setMapLocationPicking] = useState(false);
   const drawing = !courseCompleted && !travel.picking && !mapLocationPicking;
   const mapNode = useRef<HTMLDivElement>(null);
   useEffect(() => { if (travel.picking) mapNode.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [travel.picking]);
   const [map, setMap] = useState<KakaoMap | null>(null);
   useTravelOverlay(map, maps, travel, { lineColor: drawOnly ? "#2868dc" : undefined });
-  const [mapLocation, setMapLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [mapLocationStatus, setMapLocationStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [mapLocationMessage, setMapLocationMessage] = useState("");
-  const mapLocationRequest = useRef(0);
-  useEffect(() => () => { mapLocationRequest.current += 1; }, []);
   const [viewport, setViewport] = useState(0);
   const [listArea, setListArea] = useState<{ stadium: string; south: number; north: number; west: number; east: number } | null>(null);
   const activeListArea = listArea?.stadium === stadium.code ? listArea : null;

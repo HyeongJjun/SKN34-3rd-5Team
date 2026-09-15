@@ -14,7 +14,7 @@ import type { CSSProperties, ReactNode } from "react";
 const LEG_COLORS = ["#3478dc", "#d76a32", "#8954b9", "#218777", "#c44776", "#9b7928", "#467b90", "#a65346", "#6663b5", "#52853d", "#ae549a", "#55718c"];
 const legColor = (index: number) => LEG_COLORS[index % LEG_COLORS.length];
 
-export function useCourseDirections(stops: RouteStop[], enabled = true, initialStart?: TravelPoint, replaceOrigin?: (point: TravelPoint) => boolean, initialMode: TravelMode = "walk", onModeChange?: (mode: TravelMode) => void) {
+export function useCourseDirections(stops: RouteStop[], enabled = true, initialStart?: TravelPoint, replaceOrigin?: (point: TravelPoint) => boolean, initialMode: TravelMode = "walk", onModeChange?: (mode: TravelMode) => void, onPickingStart?: () => void) {
   const [legSelection, setLegSelection] = useState<{ key: string; index: number } | null>(null);
   const [mode, setModeState] = useState<TravelMode>(initialMode);
   const setMode = (next: TravelMode) => { setModeState(next); onModeChange?.(next); };
@@ -54,6 +54,7 @@ export function useCourseDirections(stops: RouteStop[], enabled = true, initialS
     setOrigin("current"); setPicking(false); setLocation(null); setLocationError("");
     const sequence = ++locationRequest.current;
     if (!window.isSecureContext || !navigator.geolocation) {
+      onPickingStart?.();
       setOrigin("custom"); setPicking(true);
       setLocationError("");
       return;
@@ -67,11 +68,12 @@ export function useCourseDirections(stops: RouteStop[], enabled = true, initialS
       setLocating(false);
     }, () => {
       if (locationRequest.current !== sequence) return;
+      onPickingStart?.();
       setLocating(false); setOrigin("custom"); setPicking(true);
       setLocationError("");
     }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   }
-  function chooseCustom() { locationRequest.current++; setLocating(false); setLocationError(""); setOrigin("custom"); setPicking(true); }
+  function chooseCustom() { locationRequest.current++; onPickingStart?.(); setLocating(false); setLocationError(""); setOrigin("custom"); setPicking(true); }
   function pickLocation(point: TravelPoint) {
     if (replaceOrigin?.(point)) { setCustomLocation(null); setOrigin("first"); }
     else { setCustomLocation(point); setOrigin("custom"); }
