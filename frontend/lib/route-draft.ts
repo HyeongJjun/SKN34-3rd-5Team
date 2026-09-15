@@ -2,6 +2,7 @@ import type { TravelMode } from "./course-directions";
 import type { RouteStop, TripRoute } from "./routes";
 import type { RouteContentFormat } from "./route-content";
 import { getStadium } from "./stadiums";
+import { createClientId } from "./client-id";
 
 export const ROUTE_DRAFT_PREFIX = "kbo-trip-route-draft-v1:";
 export const ROUTE_DRAFT_VERSION = 1;
@@ -92,7 +93,7 @@ export function saveRouteDraft(storage: StorageLike | undefined, context: string
     if (current && JSON.stringify(current.data) === serializedData) return { status: "unchanged", raw: currentRaw };
     if (currentRaw && !current) return { status: "conflict" };
     if (currentRaw !== expectedRaw) return { status: "conflict" };
-    const draft: StoredRouteDraft = { version: ROUTE_DRAFT_VERSION, revision: crypto.randomUUID(), updatedAt: new Date().toISOString(), data };
+    const draft: StoredRouteDraft = { version: ROUTE_DRAFT_VERSION, revision: createClientId(), updatedAt: new Date().toISOString(), data };
     const raw = JSON.stringify(draft);
     storage.setItem(key, raw);
     return { status: "saved", draft, raw };

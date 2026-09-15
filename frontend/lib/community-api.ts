@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
-import { communityPostCategories, type CommunityPostCategory } from "./community-post-category";
-import { memberError, memberFetch } from "./member-auth-request";
+import { communityPostCategories } from "./community-post-category";
+import type { CommunityCommentDto, CommunityPostWriteDto, CommunityReportResultDto, CommunityReportWriteDto, CommunityVoteStateDto } from "./api/content";
+import { apiRequest } from "./api/client";
+import { memberFetch } from "./member-auth-request";
 import { teamBoards, type TeamCommunityPost } from "./team-community";
 
 type CommunityState = { posts: TeamCommunityPost[]; loading: boolean; error: string };
-export type CommunityPostInput = { board: "free" | "teams"; teamCode: string; category: CommunityPostCategory; title: string; content: string };
-export type CommunityComment = { id: number; postId: string; authorId: number; author: string; content: string; createdAt: string; updatedAt: string };
-export type CommunityVoteState = { vote: "up" | "down" | null; recommendations: number; downvotes: number };
-export type CommunityReportReason = "spam" | "abuse" | "inappropriate" | "privacy" | "other";
+export type CommunityPostInput = CommunityPostWriteDto;
+export type CommunityComment = CommunityCommentDto;
+export type CommunityVoteState = CommunityVoteStateDto;
+export type CommunityReportReason = CommunityReportWriteDto["reason"];
 
 const listeners = new Set<() => void>();
 const teamCodes = new Set(teamBoards.map(team => team.code));
@@ -57,7 +59,7 @@ function isVoteState(value: unknown): value is CommunityVoteState {
   return (vote.vote === "up" || vote.vote === "down" || vote.vote === null) && isCount(vote.recommendations) && isCount(vote.downvotes);
 }
 
-function isReportResult(value: unknown): value is { id: number; created: boolean } {
+function isReportResult(value: unknown): value is CommunityReportResultDto {
   if (!value || typeof value !== "object") return false;
   const report = value as Record<string, unknown>;
   return isPositiveInteger(report.id) && typeof report.created === "boolean";
@@ -90,11 +92,6 @@ function postInput(input: CommunityPostInput) {
   return { ...input, teamCode, title: content(input.title, "제목", 200), content: content(input.content, "본문", 20000) };
 }
 
-async function apiError(response: Response, fallback: string) {
-  const message = memberError(await response.json().catch(() => null), fallback).trim();
-  return new Error(message.length <= 200 && /[가-힣]/.test(message) ? message : fallback);
-}
-
 function requestError(error: unknown, fallback: string) {
   if (error instanceof DOMException && (error.name === "AbortError" || error.name === "TimeoutError")) return new Error("요청 시간이 초과됐어요.");
   if (error instanceof Error && error.message.length <= 200 && /[가-힣]/.test(error.message)) return error;
@@ -103,9 +100,7 @@ function requestError(error: unknown, fallback: string) {
 
 async function requestJson<T>(path: string, init: RequestInit, validate: (value: unknown) => value is T, fallback: string, authenticated = true): Promise<T> {
   try {
-    const response = await (authenticated ? memberFetch(path, init) : fetch(path, init));
-    if (!response.ok) throw await apiError(response, fallback);
-    const data: unknown = await response.json().catch(() => null);
+    const data = await apiRequest<unknown>(path, init, authenticated ? memberFetch : fetch);
     if (!validate(data)) throw new Error("서버 응답 형식이 올바르지 않아요.");
     return data;
   } catch (error) {
@@ -115,8 +110,7 @@ async function requestJson<T>(path: string, init: RequestInit, validate: (value:
 
 async function requestVoid(path: string, init: RequestInit, fallback: string) {
   try {
-    const response = await memberFetch(path, init);
-    if (!response.ok) throw await apiError(response, fallback);
+    await apiRequest(path, init, memberFetch);
   } catch (error) {
     throw requestError(error, fallback);
   }
@@ -124,9 +118,7 @@ async function requestVoid(path: string, init: RequestInit, fallback: string) {
 
 export async function fetchCommunityPosts(fetcher: typeof fetch = fetch): Promise<TeamCommunityPost[]> {
   try {
-    const response = await fetcher("/api/community/posts/", { cache: "no-store", signal: timeoutSignal() });
-    if (!response.ok) throw await apiError(response, "게시글을 불러오지 못했어요.");
-    const data: unknown = await response.json().catch(() => null);
+    const data = await apiRequest<unknown>("/api/community/posts/", { cache: "no-store", signal: timeoutSignal() }, fetcher);
     if (!Array.isArray(data) || !data.every(isPost)) throw new Error("서버 응답 형식이 올바르지 않아요.");
     return data;
   } catch (error) {

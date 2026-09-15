@@ -13,6 +13,7 @@ import {
   type ChatCheckpoint,
 } from "@/lib/chat/client";
 import { useMemberAuth } from "@/lib/member-auth";
+import { createClientId } from "@/lib/client-id";
 import { ChatPopup } from "./chat-popup";
 
 type ConversationSnapshot = {
@@ -221,7 +222,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
     archiveCurrentConversation();
     const carryDraft = uncertain ? draft : "";
-    const id = crypto.randomUUID();
+    const id = createClientId();
     setActiveConversationId(id);
     setConversations(current => [{ id, title: "새 대화" }, ...current]);
     historyRef.current = [];

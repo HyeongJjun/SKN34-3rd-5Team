@@ -52,6 +52,7 @@ AUTH_USER_MODEL = 'accounts.CustomUser'
 
 INSTALLED_APPS = [
     'rest_framework',
+    'drf_spectacular',
     "rest_framework_simplejwt",
     'rest_framework_simplejwt.token_blacklist',
     'django.contrib.admin',
@@ -167,6 +168,15 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+DATA_UPLOAD_MAX_MEMORY_SIZE = 6 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
+
+COMMUNITY_IMAGE_S3_ENDPOINT = os.getenv("COMMUNITY_IMAGE_S3_ENDPOINT", "http://minio:9000")
+COMMUNITY_IMAGE_S3_ACCESS_KEY = os.getenv("COMMUNITY_IMAGE_S3_ACCESS_KEY", "minioadmin")
+COMMUNITY_IMAGE_S3_SECRET_KEY = os.getenv("COMMUNITY_IMAGE_S3_SECRET_KEY", "")
+COMMUNITY_IMAGE_S3_BUCKET = os.getenv("COMMUNITY_IMAGE_S3_BUCKET", "community-images")
+COMMUNITY_IMAGE_S3_REGION = os.getenv("COMMUNITY_IMAGE_S3_REGION", "us-east-1")
+
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
@@ -200,11 +210,23 @@ if email_backend == "django.core.mail.backends.smtp.EmailBackend":
 
 REST_FRAMEWORK = {
     'NUM_PROXIES': 1,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_THROTTLE_RATES': {
         'course_write': '30/hour',
+    },
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'KBO Journey API',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SCHEMA_PATH_PREFIX_INSERT': '/api',
+    'ENUM_NAME_OVERRIDES': {
+        'ChatFinalizeStatusEnum': [('completed', 'completed'), ('stopped', 'stopped')],
+        'CompletedStatusEnum': [('completed', 'completed')],
     },
 }
 

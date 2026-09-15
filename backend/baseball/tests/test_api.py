@@ -7,9 +7,11 @@ from django.contrib.auth import get_user_model
 from django.db import close_old_connections, connection
 from django.test import TestCase, TransactionTestCase
 from rest_framework.test import APIClient
+from drf_spectacular.generators import SchemaGenerator
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from baseball.models import FoodStore, FoodStoreLocation, FoodStoreMenu, Game, HomeContext, SeatZone, Stadium, Team, TicketPolicy, TicketPrice, Transport
-from baseball.serializers import RESOURCE_FIELDS, RESOURCE_MODELS, RESOURCE_SERIALIZERS
+from baseball.serializers import RESOURCE_DETAIL_SERIALIZERS, RESOURCE_FIELDS, RESOURCE_MODELS, RESOURCE_SERIALIZERS
 
 
 class BaseballApiTests(TestCase):
@@ -23,6 +25,18 @@ class BaseballApiTests(TestCase):
         self.assertEqual(set(RESOURCE_MODELS), set(RESOURCE_FIELDS) | set(RESOURCE_SERIALIZERS))
         for resource in RESOURCE_MODELS:
             self.assertEqual(200, self.client.get(f"/baseball/manage/{resource}/").status_code, resource)
+
+    def test_openapi_has_one_exact_admin_schema_per_resource(self):
+        schemas = SchemaGenerator().get_schema(request=None, public=True)["components"]["schemas"]
+        self.assertEqual(set(RESOURCE_MODELS), set(RESOURCE_FIELDS) | set(RESOURCE_SERIALIZERS) | set(RESOURCE_DETAIL_SERIALIZERS))
+        for resource, model in RESOURCE_MODELS.items():
+            name = model.__name__
+            self.assertEqual(set(RESOURCE_FIELDS[resource]), set(schemas[name]["properties"]), name)
+            self.assertEqual(
+                {*RESOURCE_FIELDS[resource], "_etag"},
+                set(schemas[f"{name}Detail"]["properties"]),
+                name,
+            )
 
     def test_staff_crud_etag_and_protect(self):
         team = {"id": 10, "team_code": "TS", "team_name_ko": "테스트"}
@@ -52,6 +66,14 @@ class BaseballApiTests(TestCase):
         user = get_user_model().objects.create_user(username="member", password="pass")
         self.client.force_authenticate(user)
         self.assertEqual(403, self.client.post("/baseball/manage/teams/", {"id": 1}, format="json").status_code)
+
+    def test_active_staff_bearer_jwt_reaches_manage_api(self):
+        user = get_user_model().objects.create_user(username="jwt-staff", password="pass", is_staff=True)
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {RefreshToken.for_user(user).access_token}")
+        self.assertEqual(200, client.get("/baseball/manage/teams/").status_code)
+        client.credentials(HTTP_AUTHORIZATION="Bearer invalid")
+        self.assertEqual(401, client.get("/baseball/manage/teams/").status_code)
 
     def test_validation(self):
         payload = {"id": 1, "stadium_code": "BAD", "stadium_name_ko": "오류", "address": "주소", "longitude": "181", "latitude": "91", "geocode_source": "TEST", "collected_at": "2026-09-08T00:00:00Z"}
@@ -131,10 +153,11 @@ class BaseballApiTests(TestCase):
         self.assertEqual([1], [row["id"] for row in self.client.get("/baseball/ticket-policies/?team=2").data["results"]])
 
     def test_management_pagination_reaches_rows_beyond_first_100(self):
+        existing = Team.objects.count()
         Team.objects.bulk_create([Team(id=index, team_code=f"T{index}", team_name_ko=f"구단 {index}") for index in range(1, 102)])
         first = self.client.get("/baseball/manage/teams/?page_size=100")
         second = self.client.get("/baseball/manage/teams/?page_size=100&page=2")
-        self.assertEqual((101, 100, 1), (first.data["count"], len(first.data["results"]), len(second.data["results"])))
+        self.assertEqual((existing + 101, 100, existing + 1), (first.data["count"], len(first.data["results"]), len(second.data["results"])))
 
     def test_every_resource_supports_create_read_patch_delete(self):
         Team.objects.create(id=102, team_code="AWAY", team_name_ko="원정팀")

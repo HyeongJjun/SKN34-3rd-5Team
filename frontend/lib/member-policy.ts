@@ -1,3 +1,8 @@
+import type { MemberUser } from "./api/auth";
+
+export const memberRoleLabel = (user: Pick<MemberUser, "is_superuser" | "is_staff">) =>
+  user.is_superuser ? "마스터 관리자" : user.is_staff ? "운영 관리자" : "일반 회원";
+
 export type MemberLevel = 1 | 2 | 3;
 export function memberLevelForPoints(points: number): MemberLevel {
   if (!Number.isSafeInteger(points) || points < 0) return 1;

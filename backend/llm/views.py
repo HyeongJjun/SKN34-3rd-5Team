@@ -16,17 +16,30 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.renderers import BaseRenderer, BrowsableAPIRenderer, JSONRenderer
 from rest_framework.response import Response
 from rest_framework.exceptions import APIException
+from drf_spectacular.utils import OpenApiResponse, PolymorphicProxySerializer, extend_schema, extend_schema_view
 
 from .chat_message_histories import DjangoChatMessageHistory
 from .chat_service import ChatService
 from .models import ChatMessage, ChatSession, ChatTurn
 from .rag.pipeline import last_detail
+from .serializers import (
+    ChatCheckpointEventSerializer,
+    ChatDeltaEventSerializer,
+    ChatDoneEventSerializer,
+    ChatErrorEventSerializer,
+    ChatFinalizeResponseSerializer,
+    ChatFinalizeSerializer,
+    ChatMessageSerializer,
+    ChatNonStreamResponseSerializer,
+    ChatSessionSerializer,
+    GuestChatDeltaEventSerializer,
+    GuestChatDoneEventSerializer,
+    GuestChatSerializer,
+)
 
 
 RECEIPT_SALT = "llm.chat-checkpoint.v1"
 RECEIPT_MAX_AGE = 10 * 60
-MAX_HISTORY_MESSAGES = 12
-MAX_HISTORY_CHARS = 32_000
 
 
 class Conflict(APIException):
@@ -75,54 +88,10 @@ def checkpoint_receipt(turn, prefix, complete=False):
     )
 
 
-class ChatSessionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ChatSession
-        fields = ("id", "title", "created_at", "updated_at")
-        read_only_fields = ("id", "created_at", "updated_at")
-
-
-class ChatMessageSerializer(serializers.ModelSerializer):
-    content = serializers.CharField(source="message", max_length=2200)
-
-    class Meta:
-        model = ChatMessage
-        fields = ("id", "sequence_no", "role", "content", "status", "created_at", "updated_at")
-        read_only_fields = ("id", "sequence_no", "role", "status", "created_at", "updated_at")
-
-
-class ChatFinalizeSerializer(serializers.Serializer):
-    receipt = serializers.CharField(max_length=1000)
-    prefix = serializers.CharField(
-        max_length=ChatService.MAX_ANSWER_LENGTH, allow_blank=True, trim_whitespace=False
-    )
-    status = serializers.ChoiceField(choices=("completed", "stopped"))
-
-
-class GuestChatSerializer(serializers.Serializer):
-    messages = serializers.ListField(min_length=1, max_length=MAX_HISTORY_MESSAGES)
-
-    def validate_messages(self, messages):
-        cleaned, total = [], 0
-        for item in messages:
-            if not isinstance(item, dict) or set(item) != {"role", "content"}:
-                raise serializers.ValidationError("메시지 형식이 올바르지 않습니다.")
-            role, content = item.get("role"), item.get("content")
-            if role not in {"user", "assistant"} or not isinstance(content, str):
-                raise serializers.ValidationError("user 또는 assistant 메시지만 보낼 수 있습니다.")
-            content = content.strip()
-            limit = 2000 if role == "user" else ChatService.MAX_ANSWER_LENGTH
-            if not content or len(content) > limit:
-                raise serializers.ValidationError("메시지가 비어 있거나 너무 깁니다.")
-            total += len(content)
-            if total > MAX_HISTORY_CHARS:
-                raise serializers.ValidationError("대화 기록이 너무 깁니다.")
-            cleaned.append({"role": role, "content": content})
-        if cleaned[-1]["role"] != "user":
-            raise serializers.ValidationError("마지막 메시지는 질문이어야 합니다.")
-        return cleaned
-
-
+@extend_schema_view(
+    get=extend_schema(responses=ChatSessionSerializer(many=True)),
+    post=extend_schema(request=ChatSessionSerializer, responses={201: ChatSessionSerializer}),
+)
 class ChatRoomView(generics.ListCreateAPIView):
     serializer_class = ChatSessionSerializer
     permission_classes = (IsAuthenticated,)
@@ -134,6 +103,10 @@ class ChatRoomView(generics.ListCreateAPIView):
         serializer.save(user=self.request.user)
 
 
+@extend_schema_view(
+    patch=extend_schema(request=ChatSessionSerializer, responses=ChatSessionSerializer),
+    delete=extend_schema(responses={204: None}),
+)
 class ChatRoomDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ChatSessionSerializer
     permission_classes = (IsAuthenticated,)
@@ -144,6 +117,28 @@ class ChatRoomDetailView(generics.RetrieveUpdateDestroyAPIView):
         return ChatSession.objects.filter(user=self.request.user)
 
 
+@extend_schema_view(
+    get=extend_schema(responses=ChatMessageSerializer(many=True)),
+    post=extend_schema(
+        request=ChatMessageSerializer,
+        responses={
+            (201, "application/json"): ChatNonStreamResponseSerializer,
+            (200, "text/event-stream"): OpenApiResponse(
+                PolymorphicProxySerializer(
+                    component_name="MemberChatEventPayload",
+                    serializers=(
+                        ChatCheckpointEventSerializer,
+                        ChatDeltaEventSerializer,
+                        ChatDoneEventSerializer,
+                        ChatErrorEventSerializer,
+                    ),
+                    resource_type_field_name=None,
+                ),
+                description="SSE checkpoint, delta, done, or error event payload",
+            ),
+        },
+    ),
+)
 class ChatMessageView(generics.ListCreateAPIView):
     serializer_class = ChatMessageSerializer
     permission_classes = (IsAuthenticated,)
@@ -254,6 +249,7 @@ class ChatFinalizeView(generics.GenericAPIView):
     serializer_class = ChatFinalizeSerializer
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(request=ChatFinalizeSerializer, responses=ChatFinalizeResponseSerializer)
     def post(self, request, turn_id):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -371,6 +367,23 @@ class GuestChatView(generics.GenericAPIView):
     authentication_classes = ()
     renderer_classes = (JSONRenderer, EventStreamRenderer)
 
+    @extend_schema(
+        request=GuestChatSerializer,
+        responses={
+            (200, "text/event-stream"): OpenApiResponse(
+                PolymorphicProxySerializer(
+                    component_name="GuestChatEventPayload",
+                    serializers=(
+                        GuestChatDeltaEventSerializer,
+                        GuestChatDoneEventSerializer,
+                        ChatErrorEventSerializer,
+                    ),
+                    resource_type_field_name=None,
+                ),
+                description="SSE delta, done, or error event payload",
+            )
+        },
+    )
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)

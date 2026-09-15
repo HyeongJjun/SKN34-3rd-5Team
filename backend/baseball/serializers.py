@@ -95,22 +95,49 @@ def serializer_for(resource, model):
 RESOURCE_SERIALIZERS = {resource: serializer_for(resource, model) for resource, model in RESOURCE_MODELS.items()}
 
 
+def detail_serializer_for(model, serializer):
+    meta = type("Meta", (serializer.Meta,), {"fields": (*serializer.Meta.fields, "_etag")})
+    return type(
+        f"{model.__name__}DetailSerializer",
+        (serializer,),
+        {"_etag": serializers.CharField(read_only=True), "Meta": meta},
+    )
+
+
+RESOURCE_DETAIL_SERIALIZERS = {
+    resource: detail_serializer_for(model, RESOURCE_SERIALIZERS[resource])
+    for resource, model in RESOURCE_MODELS.items()
+}
+
+
+class BaseballErrorSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    message = serializers.CharField()
+    field_errors = serializers.DictField(child=serializers.ListField(child=serializers.CharField()))
+    references = serializers.DictField(child=serializers.IntegerField(), required=False)
+
+
 class PublicTeamSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Team
         fields = ("id", "team_code", "team_name_ko")
 
 
+class PublicHomeTeamSerializer(serializers.ModelSerializer):
+    code = serializers.CharField(source="team.team_code", read_only=True)
+    name = serializers.CharField(source="team.team_name_ko", read_only=True)
+
+    class Meta:
+        model = models.HomeContext
+        fields = ("id", "team_id", "code", "name", "season")
+
+
 class PublicStadiumSerializer(serializers.ModelSerializer):
-    home_teams = serializers.SerializerMethodField()
+    home_teams = PublicHomeTeamSerializer(source="home_contexts", many=True, read_only=True)
 
     class Meta:
         model = models.Stadium
         fields = ("id", "stadium_code", "stadium_name_ko", "address", "longitude", "latitude", "geocode_source", "facility_manager", "game_operator", "phone_general", "phone_facility", "phone_ticket", "collected_at", "home_teams")
-
-    def get_home_teams(self, obj):
-        return [{"id": item.id, "team_id": item.team_id, "code": item.team.team_code, "name": item.team.team_name_ko, "season": item.season} for item in obj.home_contexts.all()]
-
 
 class PublicTicketPriceSerializer(serializers.ModelSerializer):
     seat_zone_code = serializers.CharField(source="seat_zone.zone_code", read_only=True)

@@ -1,12 +1,6 @@
 from .admin_views import MemberList, MemberRole
 from django.urls import path
-from rest_framework_simplejwt.views import (
-    TokenBlacklistView,
-    TokenObtainPairView,
-    TokenRefreshView,
-)
-
-from .views import change_password, get_user, request_email_change, request_username, set_password, signup, verify_email_change
+from .views import LogoutView, RefreshView, SignInView, change_password, get_user, request_email_change, request_username, set_password, signup, verify_email_change
 
 """
     Django 직접 호출은 /auth/, Nginx 경유는 /api/auth/입니다.
@@ -22,8 +16,8 @@ from .views import change_password, get_user, request_email_change, request_user
 urlpatterns = [
     path("admin/members/", MemberList.as_view(), name="admin_members"),
     path("admin/members/<int:pk>/role/", MemberRole.as_view(), name="admin_member_role"),
-    path("signin", TokenObtainPairView.as_view(), name="login"),
-    path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("signin", SignInView.as_view(), name="login"),
+    path("token/refresh/", RefreshView.as_view(), name="token_refresh"),
     path("signup/", signup, name="signup"),
     path("password/request", change_password, name="password_request"),
     path("password", set_password, name="password_reset"),
@@ -31,5 +25,5 @@ urlpatterns = [
     path("username/request", request_username, name="username_request"),
     path("email/request", request_email_change, name="email_request"),
     path("email/verify", verify_email_change, name="email_verify"),
-    path("logout", TokenBlacklistView.as_view(), name="auth_logout"),
+    path("logout", LogoutView.as_view(), name="auth_logout"),
 ]

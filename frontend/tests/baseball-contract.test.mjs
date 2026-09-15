@@ -7,8 +7,10 @@ const writer = readFileSync(new URL("../components/route-writer.tsx", import.met
 const stadiums = readFileSync(new URL("../app/stadiums/page.tsx", import.meta.url), "utf8");
 const detail = readFileSync(new URL("../app/stadiums/[code]/page.tsx", import.meta.url), "utf8");
 const admin = readFileSync(new URL("../app/admin/baseball/page.tsx", import.meta.url), "utf8");
+const client = readFileSync(new URL("../lib/baseball/client.ts", import.meta.url), "utf8");
 const adapters = readFileSync(new URL("../lib/baseball/adapters.ts", import.meta.url), "utf8");
 const types = readFileSync(new URL("../lib/baseball/types.ts", import.meta.url), "utf8");
+const schema = readFileSync(new URL("../lib/api/schema.d.ts", import.meta.url), "utf8");
 
 test("baseball admin exposes exactly the approved 19 fixed resources", () => {
   const names = [...resources.matchAll(/^\s*\["([a-z-]+)",/gm)].map(match => match[1]);
@@ -22,8 +24,8 @@ test("detail and admin keep scoped data paging and searchable relation controls"
   assert.match(detail, /공식 메뉴 분류/);
   assert.match(detail, /price_krw/);
   assert.match(admin, /관계 검색/);
-  assert.match(admin, /page_size: "100"/);
-  assert.match(admin, /selectedResponse/);
+  assert.match(client, /page_size: String\(pageSize\)/);
+  assert.match(admin, /fetchAdminDetail\(name, id\)/);
   assert.match(admin, /const missing = relationIds\(selectedIds\)/);
   assert.match(admin, /results: \[\.\.\.selected, \.\.\.rows\]/);
   assert.match(adapters, /visual\?\.region \?\? "미분류"/);
@@ -39,11 +41,12 @@ test("stadium consumers load DB data and do not silently import the static array
 });
 
 test("repeated admin searches refresh and nullable stadium flags stay three-state", () => {
-  const selectResource = admin.match(/  function selectResource\(name: string\) \{[\s\S]*?\n  \}/)?.[0] ?? "";
+  const selectResource = admin.match(/  function selectResource\(name: AdminResourceName\) \{[\s\S]*?\n  \}/)?.[0] ?? "";
   assert.match(admin, /onSubmit=.*setReload\(item => item \+ 1\)/);
   assert.match(selectResource, /setReload\(item => item \+ 1\)/);
-  assert.match(types, /accessible: boolean \| null/);
-  assert.match(types, /reservation_required: boolean \| null/);
-  assert.match(detail, /shownBoolean\(item\.accessible, "있음", "없음"\)/);
-  assert.match(detail, /shownBoolean\(item\.reservation_required, "필요", "불필요"\)/);
+  assert.match(schema, /accessible\?: boolean \| null/);
+  assert.match(schema, /reservation_required\?: boolean \| null/);
+  assert.match(types, /FacilityDto as Facility/);
+  assert.match(detail, /shownBoolean\(item\.accessible \?\? null, "있음", "없음"\)/);
+  assert.match(detail, /shownBoolean\(item\.reservation_required \?\? null, "필요", "불필요"\)/);
 });

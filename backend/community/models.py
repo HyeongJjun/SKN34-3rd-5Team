@@ -8,7 +8,7 @@ from django.utils import timezone
 
 TEAM_CODES = ("LG", "HH", "SK", "SS", "NC", "KT", "LT", "HT", "OB", "WO")
 FREE_CATEGORIES = ("질문", "잡담")
-TEAM_CATEGORIES = FREE_CATEGORIES + ("경기토론", "굿즈", "사진·영상", "응원", "전력토론", "좌석·예매", "직관준비", "직관후기")
+TEAM_CATEGORIES = FREE_CATEGORIES + ("응원", "경기토론", "전력토론", "소식·정보", "이적·신인", "직관후기", "좌석·예매", "직관준비", "굿즈", "사진·영상")
 
 
 def new_post_source_id():
@@ -59,6 +59,67 @@ class CommunityPost(models.Model):
                 fields=("owner", "idempotency_key"),
                 condition=Q(owner__isnull=False, idempotency_key__isnull=False),
                 name="community_post_owner_idempotency_unique",
+            ),
+        )
+
+
+class CommunityDraft(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="community_drafts")
+    board = models.CharField(max_length=8, choices=(("free", "free"), ("teams", "teams")))
+    team_code = models.CharField(max_length=2, blank=True, default="")
+    category = models.CharField(max_length=20, blank=True, default="")
+    title = models.CharField(max_length=200, blank=True, default="")
+    content = models.TextField(max_length=20000, blank=True, default="")
+    revision = models.PositiveIntegerField(default=1)
+    published_post = models.ForeignKey(
+        CommunityPost,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="source_drafts",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(board="free", team_code="") | Q(board="teams", team_code__in=TEAM_CODES),
+                name="community_draft_board_team_valid",
+            ),
+            models.CheckConstraint(condition=Q(revision__gte=1), name="community_draft_revision_valid"),
+        )
+
+    @property
+    def image_ids(self):
+        return list(self.images.values_list("id", flat=True))
+
+
+class CommunityImage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="community_images",
+    )
+    object_key = models.CharField(max_length=255, unique=True)
+    content_type = models.CharField(max_length=20)
+    size = models.PositiveIntegerField()
+    width = models.PositiveIntegerField()
+    height = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    draft = models.ForeignKey(CommunityDraft, null=True, blank=True, on_delete=models.SET_NULL, related_name="images")
+    post = models.ForeignKey(CommunityPost, null=True, blank=True, on_delete=models.SET_NULL, related_name="images")
+
+    class Meta:
+        ordering = ("created_at", "id")
+        constraints = (
+            models.CheckConstraint(
+                condition=Q(draft__isnull=True) | Q(post__isnull=True),
+                name="community_image_single_target",
             ),
         )
 

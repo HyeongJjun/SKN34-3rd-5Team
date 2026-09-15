@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.runnables import RunnableLambda
 from openai import OpenAIError
 from rest_framework.test import APITestCase
+from drf_spectacular.generators import SchemaGenerator
 
 from .chat_service import ChatService
 from .models import ChatMessage, ChatSession, ChatTurn, Document, DocumentChunk
@@ -213,6 +214,29 @@ class ChatApiTest(APITestCase):
         self.assertEqual(self.client.delete(f"/chat/sessions/{session_id}/").status_code, 204)
         self.assertFalse(ChatMessage.objects.exists())
 
+    def test_openapi_keeps_json_and_sse_contracts_distinct(self):
+        schema = SchemaGenerator().get_schema(request=None, public=True)
+        schemas = schema["components"]["schemas"]
+        self.assertTrue({
+            "ChatSession", "ChatMessage", "ChatFinalize", "ChatFinalizeResponse",
+            "ChatNonStreamResponse", "MemberChatEventPayload", "GuestChatEventPayload",
+            "ChatDoneEvent", "GuestChatDoneEvent", "GuestChatMessage",
+        }.issubset(schemas))
+        self.assertEqual(
+            "#/components/schemas/GuestChatMessage",
+            schemas["GuestChat"]["properties"]["messages"]["items"]["$ref"],
+        )
+        member = schema["paths"]["/api/chat/sessions/{session_id}/messages/"]["post"]["responses"]
+        self.assertEqual(
+            "#/components/schemas/MemberChatEventPayload",
+            member["200"]["content"]["text/event-stream"]["schema"]["$ref"],
+        )
+        self.assertEqual(
+            "#/components/schemas/ChatNonStreamResponse",
+            member["201"]["content"]["application/json"]["schema"]["$ref"],
+        )
+        self.assertTrue({"places", "coursePayload", "route"}.issubset(schemas["ChatDoneEvent"]["properties"]))
+
     def test_invalid_input_and_other_users_session_do_not_call_llm(self):
         session = ChatSession.objects.create(user=self.user)
         url = f"/chat/sessions/{session.pk}/messages/"
@@ -294,6 +318,37 @@ class ChatApiTest(APITestCase):
             list(session.messages.values_list("role", "message", "status")),
             [("human", "hello", ""), ("ai", "첫 답변", "completed")],
         )
+
+    @override_settings(CHAT_CHECKPOINT_SIGNING_KEY="test-only-signing-key")
+    def test_course_metadata_survives_stream_and_non_stream_responses(self):
+        metadata = {
+            "places": [{
+                "phase": "BEFORE", "name": "식당", "lat": 37.5, "lng": 127.0,
+                "category": "식당", "placeId": "place-1", "address": "서울",
+                "placeUrl": "https://example.com/place", "distance": 120,
+                "reason": "가까움", "time": "15:00", "stayMin": 60,
+            }],
+            "coursePayload": {
+                "title": "직관 코스", "stadium": "잠실", "content": "일정",
+                "contentFormat": "", "duration": "약 3시간", "tags": ["직관코스"],
+                "startLat": 37.5, "startLng": 127.0,
+                "stops": [{
+                    "position": 0, "name": "식당", "lat": 37.5, "lng": 127.0,
+                    "category": "식당", "placeId": "place-1", "address": "서울",
+                    "isMapPoint": True,
+                }],
+            },
+            "route": "course:DOOSAN",
+        }
+        session = ChatSession.objects.create(user=self.user)
+        with patch("llm.views.last_detail", return_value=metadata):
+            done = self.stream(session, chunks=("답",))[-1][1]
+            non_stream = self.client.post(
+                f"/chat/sessions/{session.pk}/messages/", {"content": "다른 질문"}, format="json"
+            ).json()
+        for key in ("places", "coursePayload", "route"):
+            self.assertEqual(metadata[key], done[key])
+            self.assertEqual(metadata[key], non_stream[key])
 
     @override_settings(CHAT_CHECKPOINT_SIGNING_KEY="test-only-signing-key")
     def test_stop_exact_prefix_wins_completion_race_and_is_idempotent(self):

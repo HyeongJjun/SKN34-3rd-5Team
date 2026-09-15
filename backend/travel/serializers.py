@@ -1,6 +1,7 @@
 import math
 
 from django.db import transaction
+from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
 from .models import Course, CourseStop
@@ -34,6 +35,7 @@ class CourseStopSerializer(serializers.ModelSerializer):
 class CourseSerializer(serializers.ModelSerializer):
     sampleId = serializers.CharField(source="source_id", read_only=True)
     isSample = serializers.BooleanField(source="is_sample", read_only=True)
+    routeNumber = serializers.CharField(source="route_number", read_only=True)
     content = serializers.CharField(required=False, allow_blank=True, max_length=12000)
     contentFormat = serializers.ChoiceField(source="content_format", choices=("", "html"), required=False, allow_blank=True)
     startLat = FiniteFloatField(source="start_lat", min_value=-90, max_value=90, required=False, allow_null=True)
@@ -44,8 +46,8 @@ class CourseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Course
-        fields = ("id", "sampleId", "title", "stadium", "description", "content", "contentFormat", "duration", "cover", "tags", "startLat", "startLng", "author", "likes", "views", "isSample", "createdAt", "updatedAt", "stops")
-        read_only_fields = ("id", "sampleId", "description", "cover", "author", "likes", "views", "isSample", "createdAt", "updatedAt")
+        fields = ("id", "sampleId", "routeNumber", "title", "stadium", "description", "content", "contentFormat", "duration", "cover", "tags", "startLat", "startLng", "author", "likes", "views", "isSample", "createdAt", "updatedAt", "stops")
+        read_only_fields = ("id", "sampleId", "routeNumber", "description", "cover", "author", "likes", "views", "isSample", "createdAt", "updatedAt")
 
     def validate_title(self, value):
         value = value.strip()
@@ -109,3 +111,95 @@ class CourseSerializer(serializers.ModelSerializer):
             data.pop("startLat")
             data.pop("startLng")
         return data
+
+
+@extend_schema_serializer(component_name="CourseStopWrite")
+class CourseStopWriteSerializer(serializers.Serializer):
+    position = serializers.IntegerField(min_value=0)
+    name = serializers.CharField(max_length=255)
+    lat = FiniteFloatField(min_value=-90, max_value=90)
+    lng = FiniteFloatField(min_value=-180, max_value=180)
+    category = serializers.CharField(max_length=120)
+    placeId = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    visitId = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    address = serializers.CharField(max_length=500, required=False, allow_blank=True, allow_null=True)
+    tourContentId = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    isMapPoint = serializers.BooleanField(required=False, allow_null=True)
+    isDrawnPoint = serializers.BooleanField(required=False, allow_null=True)
+
+
+@extend_schema_serializer(component_name="CourseStop")
+class CourseStopResponseSerializer(CourseStopWriteSerializer):
+    placeId = serializers.CharField(max_length=255, required=False)
+    visitId = serializers.CharField(max_length=255, required=False)
+    address = serializers.CharField(max_length=500, required=False)
+    tourContentId = serializers.CharField(max_length=255, required=False)
+    isMapPoint = serializers.BooleanField(required=False)
+    isDrawnPoint = serializers.BooleanField(required=False)
+
+
+@extend_schema_serializer(component_name="CourseCreateRequest")
+class CourseCreateRequestSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=80)
+    stadium = serializers.CharField(max_length=120)
+    content = serializers.CharField(max_length=12000, required=False, allow_blank=True)
+    contentFormat = serializers.ChoiceField(choices=("", "html"), required=False, allow_blank=True)
+    duration = serializers.CharField(max_length=80)
+    tags = serializers.ListField(child=serializers.CharField())
+    startLat = FiniteFloatField(min_value=-90, max_value=90, required=False, allow_null=True)
+    startLng = FiniteFloatField(min_value=-180, max_value=180, required=False, allow_null=True)
+    stops = CourseStopWriteSerializer(many=True)
+
+
+@extend_schema_serializer(component_name="CoursePatchRequest")
+class CoursePatchRequestSerializer(CourseCreateRequestSerializer):
+    title = serializers.CharField(max_length=80, required=False)
+    stadium = serializers.CharField(max_length=120, required=False)
+    duration = serializers.CharField(max_length=80, required=False)
+    tags = serializers.ListField(child=serializers.CharField(), required=False)
+    stops = CourseStopWriteSerializer(many=True, required=False)
+
+
+@extend_schema_serializer(component_name="Course")
+class CourseResponseSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    sampleId = serializers.CharField(required=False)
+    routeNumber = serializers.RegexField(r"^\d{6}$")
+    title = serializers.CharField()
+    stadium = serializers.CharField()
+    description = serializers.CharField()
+    content = serializers.CharField()
+    contentFormat = serializers.ChoiceField(choices=("html",), required=False)
+    duration = serializers.CharField()
+    cover = serializers.CharField()
+    tags = serializers.ListField(child=serializers.CharField())
+    startLat = serializers.FloatField(required=False)
+    startLng = serializers.FloatField(required=False)
+    author = serializers.CharField()
+    likes = serializers.IntegerField(min_value=0)
+    views = serializers.IntegerField(min_value=0)
+    isSample = serializers.BooleanField()
+    createdAt = serializers.DateTimeField()
+    updatedAt = serializers.DateTimeField()
+    stops = CourseStopResponseSerializer(many=True)
+
+
+@extend_schema_serializer(component_name="CourseCreateResult")
+class CourseCreateResultSerializer(CourseResponseSerializer):
+    editToken = serializers.CharField()
+
+
+@extend_schema_serializer(component_name="CourseReaction")
+class CourseReactionSerializer(serializers.Serializer):
+    liked = serializers.BooleanField()
+    likes = serializers.IntegerField(min_value=0)
+
+
+@extend_schema_serializer(component_name="CourseReactionRequest")
+class CourseReactionRequestSerializer(serializers.Serializer):
+    liked = serializers.BooleanField()
+
+
+@extend_schema_serializer(component_name="CourseViewResult")
+class CourseViewResultSerializer(serializers.Serializer):
+    views = serializers.IntegerField(min_value=0)

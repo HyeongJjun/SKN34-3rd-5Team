@@ -1,18 +1,21 @@
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+from threading import Barrier
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password
-from django.db import connection
+from django.db import close_old_connections, connection
 from django.db.migrations.executor import MigrationExecutor
 from django.core.cache import cache
 from django.test import TestCase, TransactionTestCase
 from django.urls import Resolver404, resolve, reverse
 from rest_framework.test import APIClient
 
-from .models import Course, CourseStop
+from .models import Course, CourseReaction, CourseStop, CourseView
 from .views import CourseWriteThrottle
 
 
@@ -59,6 +62,7 @@ class CourseApiTests(TestCase):
         self.assertNotIn("editToken", detail.data)
         self.assertNotIn("editToken", listing.data[0])
         self.assertNotIn("edit_token_hash", detail.data)
+        self.assertRegex(detail.data["routeNumber"], r"^\d{6}$")
 
         reversed_stops = list(reversed(course_data()["stops"]))
         reordered = self.client.post("/courses/", course_data(stops=reversed_stops), format="json")
@@ -75,8 +79,39 @@ class CourseApiTests(TestCase):
         self.assertEqual(updated.data["title"], "변경")
         self.assertNotIn("editToken", updated.data)
         self.assertEqual(self.client.delete(url, HTTP_X_COURSE_EDIT_TOKEN="wrong").status_code, 403)
-        self.assertEqual(self.client.delete(url, HTTP_X_COURSE_EDIT_TOKEN=created.data["editToken"]).status_code, 204)
+        deleted = self.client.delete(url, HTTP_X_COURSE_EDIT_TOKEN=created.data["editToken"])
+        self.assertEqual((deleted.status_code, deleted.content), (204, b""))
         self.assertFalse(Course.objects.filter(pk=created.data["id"]).exists())
+
+    def test_reaction_is_member_owned_idempotent_and_view_is_token_deduplicated(self):
+        created = self.create_course()
+        course = Course.objects.get(pk=created.data["id"])
+        reaction_url = f"/courses/{course.pk}/reaction/"
+        view_url = f"/courses/{course.pk}/view/"
+        self.assertEqual(self.client.get(reaction_url).status_code, 401)
+
+        user = get_user_model().objects.create_user(username="course-fan")
+        self.client.force_authenticate(user)
+        first = self.client.post(reaction_url, {"liked": True}, format="json")
+        repeated = self.client.post(reaction_url, {"liked": True}, format="json")
+        self.assertEqual((first.status_code, first.data), (200, {"liked": True, "likes": 1}))
+        self.assertEqual(repeated.data, first.data)
+        self.assertEqual(CourseReaction.objects.filter(course=course, user=user).count(), 1)
+        removed = self.client.post(reaction_url, {"liked": False}, format="json")
+        repeated_remove = self.client.post(reaction_url, {"liked": False}, format="json")
+        self.assertEqual((removed.data, repeated_remove.data), ({"liked": False, "likes": 0}, {"liked": False, "likes": 0}))
+
+        self.client.force_authenticate(user=None)
+        token = str(uuid.uuid4())
+        invalid = self.client.post(view_url, HTTP_X_COURSE_VIEW_TOKEN="not-a-uuid")
+        first_view = self.client.post(view_url, HTTP_X_COURSE_VIEW_TOKEN=token)
+        repeated_view = self.client.post(view_url, HTTP_X_COURSE_VIEW_TOKEN=token)
+        second_view = self.client.post(view_url, HTTP_X_COURSE_VIEW_TOKEN=str(uuid.uuid4()))
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual((first_view.data["views"], repeated_view.data["views"], second_view.data["views"]), (1, 1, 2))
+        self.assertEqual(CourseView.objects.filter(course=course).count(), 2)
+        self.assertFalse(CourseView.objects.filter(actor_digest=token).exists())
+        self.assertNotIn("Set-Cookie", first_view.headers)
 
     def test_course_writes_require_same_origin_without_trusting_forwarded_headers(self):
         for host in ("localhost:43123", "127.0.0.1:43124"):
@@ -327,6 +362,46 @@ class CourseSampleTests(TestCase):
         self.assertEqual([stop["name"] for stop in copied["stops"]], ["사직야구장", "산책 후보 지점", "마무리 지점"])
 
 
+class CourseConcurrencyTests(TransactionTestCase):
+    reset_sequences = True
+
+    def test_parallel_create_assigns_distinct_consecutive_route_numbers(self):
+        barrier = Barrier(2)
+
+        def create(index):
+            close_old_connections()
+            barrier.wait(2)
+            course = Course.objects.create(
+                title=f"동시 코스 {index}", stadium="잠실", duration="반나절", tags=[], edit_token_hash="hash",
+            )
+            close_old_connections()
+            return course.route_number
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            numbers = sorted(pool.map(create, range(2)))
+        self.assertEqual(int(numbers[1]) - int(numbers[0]), 1)
+
+    def test_parallel_same_member_like_is_idempotent(self):
+        course = Course.objects.create(title="반응 코스", stadium="잠실", duration="반나절", tags=[], edit_token_hash="hash")
+        user = get_user_model().objects.create_user(username="parallel-course-fan")
+        barrier = Barrier(2)
+
+        def like(_index):
+            close_old_connections()
+            client = APIClient()
+            client.force_authenticate(get_user_model().objects.get(pk=user.pk))
+            barrier.wait(2)
+            response = client.post(f"/courses/{course.pk}/reaction/", {"liked": True}, format="json")
+            close_old_connections()
+            return response.status_code
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            statuses = list(pool.map(like, range(2)))
+        course.refresh_from_db()
+        self.assertEqual(statuses, [200, 200])
+        self.assertEqual((course.likes, CourseReaction.objects.filter(course=course, user=user).count()), (1, 1))
+
+
 class CourseSampleMigrationTests(TransactionTestCase):
     def test_reverse_noop_and_reapply_preserve_custom_rows_and_do_not_duplicate_samples(self):
         custom = Course.objects.create(
@@ -334,7 +409,7 @@ class CourseSampleMigrationTests(TransactionTestCase):
         )
         CourseStop.objects.create(course=custom, position=0, name="사용자 장소", lat=37.5, lng=127.1, category="카페")
         MigrationExecutor(connection).migrate([("travel", "0003_course_sample_fields")])
-        MigrationExecutor(connection).migrate([("travel", "0004_seed_course_samples")])
+        MigrationExecutor(connection).migrate([("travel", "0005_course_engagement")])
         custom.refresh_from_db()
         self.assertEqual(custom.edit_token_hash, "custom-hash")
         self.assertEqual(list(custom.stops.values_list("name", flat=True)), ["사용자 장소"])

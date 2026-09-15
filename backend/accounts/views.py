@@ -13,15 +13,49 @@ from rest_framework.decorators import api_view
 from rest_framework.exceptions import NotAuthenticated, Throttled, ValidationError
 from rest_framework.response import Response
 from rest_framework import status
+from drf_spectacular.utils import extend_schema
+from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from .auth_service import AuthService
 from .models import EmailChangeChallenge
-from .serializers import SignupSerializer, ResetPasswordSerializer, SendEmailSerializer, UserSerializer
+from .serializers import (
+    EmailChangeRequestResponseSerializer,
+    EmailVerificationRequestSerializer,
+    EmailVerificationResponseSerializer,
+    LogoutRequestSerializer,
+    MemberUserSerializer,
+    MemberUserUpdateSerializer,
+    PasswordUpdateRequestSerializer,
+    ResetPasswordSerializer,
+    SendEmailSerializer,
+    SignInRequestSerializer,
+    SignupSerializer,
+    TokenPairSerializer,
+    TokenRefreshRequestSerializer,
+    TokenRefreshResponseSerializer,
+    UsernameRequestResponseSerializer,
+)
 
 User = get_user_model()
 
 
+@extend_schema(request=SignInRequestSerializer, responses=TokenPairSerializer, auth=[])
+class SignInView(TokenObtainPairView):
+    pass
+
+
+@extend_schema(request=TokenRefreshRequestSerializer, responses=TokenRefreshResponseSerializer, auth=[])
+class RefreshView(TokenRefreshView):
+    pass
+
+
+@extend_schema(request=LogoutRequestSerializer, responses={200: {"type": "object", "properties": {}, "additionalProperties": False}})
+class LogoutView(TokenBlacklistView):
+    pass
+
+
+@extend_schema(request=SignupSerializer, responses={201: None}, auth=[])
 @api_view(["POST"])
 def signup(request):
     """
@@ -47,6 +81,7 @@ def signup(request):
         status=status.HTTP_201_CREATED,
     )
 
+@extend_schema(request=SendEmailSerializer, responses={200: None}, auth=[])
 @api_view(['POST'])
 def change_password(request):
     """
@@ -72,6 +107,7 @@ def change_password(request):
         status=status.HTTP_200_OK
     )
 
+@extend_schema(request=PasswordUpdateRequestSerializer, responses={200: None})
 @api_view(['POST'])
 @transaction.atomic
 def set_password(request):
@@ -122,6 +158,8 @@ def set_password(request):
     return Response(status=status.HTTP_200_OK)
 
 
+@extend_schema(methods=['GET'], responses=MemberUserSerializer, auth=[{"jwtAuth": []}])
+@extend_schema(methods=['PATCH'], request=MemberUserUpdateSerializer, responses=MemberUserSerializer, auth=[{"jwtAuth": []}])
 @api_view(['GET', 'PATCH'])
 @transaction.atomic
 def get_user(request):
@@ -145,10 +183,10 @@ def get_user(request):
         if not isinstance(request.data, Mapping) or not set(request.data).issubset(allowed):
             raise ValidationError({'detail': '변경할 수 없는 회원 정보가 포함됐습니다.'})
         user = User.objects.select_for_update().get(pk=user.pk, is_active=True)
-        serializer = UserSerializer(user, data=request.data, partial=True)
+        serializer = MemberUserUpdateSerializer(user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-    return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
+    return Response(MemberUserSerializer(user).data, status=status.HTTP_200_OK)
 
 
 def _throttle(kind, value, seconds=60):
@@ -157,6 +195,7 @@ def _throttle(kind, value, seconds=60):
         raise Throttled(wait=seconds)
 
 
+@extend_schema(request=SendEmailSerializer, responses=UsernameRequestResponseSerializer, auth=[])
 @api_view(['POST'])
 def request_username(request):
     serializer = SendEmailSerializer(data=request.data)
@@ -174,6 +213,7 @@ def request_username(request):
     return Response({'ok': True})
 
 
+@extend_schema(request=SendEmailSerializer, responses=EmailChangeRequestResponseSerializer, auth=[{"jwtAuth": []}])
 @api_view(['POST'])
 @transaction.atomic
 def request_email_change(request):
@@ -205,6 +245,7 @@ def request_email_change(request):
     return Response({'request_id': str(challenge.pk)})
 
 
+@extend_schema(request=EmailVerificationRequestSerializer, responses=EmailVerificationResponseSerializer, auth=[{"jwtAuth": []}])
 @api_view(['POST'])
 def verify_email_change(request):
     if not request.user.is_authenticated:

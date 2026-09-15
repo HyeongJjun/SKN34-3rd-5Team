@@ -14,7 +14,7 @@ import type { CSSProperties, ReactNode } from "react";
 const LEG_COLORS = ["#3478dc", "#d76a32", "#8954b9", "#218777", "#c44776", "#9b7928", "#467b90", "#a65346", "#6663b5", "#52853d", "#ae549a", "#55718c"];
 const legColor = (index: number) => LEG_COLORS[index % LEG_COLORS.length];
 
-export function useCourseDirections(stops: RouteStop[], enabled = true, initialStart?: TravelPoint, replaceOrigin?: (point: TravelPoint) => boolean, initialMode: TravelMode = "walk", onModeChange?: (mode: TravelMode) => void) {
+export function useCourseDirections(stops: RouteStop[], enabled = true, initialStart?: TravelPoint, replaceOrigin?: (point: TravelPoint) => boolean, initialMode: TravelMode = "walk", onModeChange?: (mode: TravelMode) => void, onPickingStart?: () => void) {
   const [legSelection, setLegSelection] = useState<{ key: string; index: number } | null>(null);
   const [mode, setModeState] = useState<TravelMode>(initialMode);
   const setMode = (next: TravelMode) => { setModeState(next); onModeChange?.(next); };
@@ -53,7 +53,12 @@ export function useCourseDirections(stops: RouteStop[], enabled = true, initialS
   function chooseCurrent() {
     setOrigin("current"); setPicking(false); setLocation(null); setLocationError("");
     const sequence = ++locationRequest.current;
-    if (!navigator.geolocation) { setLocationError("이 브라우저에서는 위치를 가져올 수 없어요. 코스 1번 출발을 선택해 주세요."); return; }
+    if (!window.isSecureContext || !navigator.geolocation) {
+      onPickingStart?.();
+      setOrigin("custom"); setPicking(true);
+      setLocationError("");
+      return;
+    }
     setLocating(true);
     navigator.geolocation.getCurrentPosition((position) => {
       if (locationRequest.current !== sequence) return;
@@ -61,18 +66,20 @@ export function useCourseDirections(stops: RouteStop[], enabled = true, initialS
       if (replaceOrigin?.(point)) { setLocation(null); setOrigin("first"); }
       else setLocation(point);
       setLocating(false);
-    }, (error) => {
+    }, () => {
       if (locationRequest.current !== sequence) return;
-      setLocating(false); setLocationError(error.code === 1 ? "위치 권한이 거부됐어요. 권한을 허용하거나 코스 1번에서 출발해 주세요." : "현재 위치를 확인하지 못했어요. 다시 시도하거나 코스 1번에서 출발해 주세요.");
+      onPickingStart?.();
+      setLocating(false); setOrigin("custom"); setPicking(true);
+      setLocationError("");
     }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   }
-  function chooseCustom() { locationRequest.current++; setLocating(false); setLocationError(""); setOrigin("custom"); setPicking(true); }
+  function chooseCustom() { locationRequest.current++; onPickingStart?.(); setLocating(false); setLocationError(""); setOrigin("custom"); setPicking(true); }
   function pickLocation(point: TravelPoint) {
     if (replaceOrigin?.(point)) { setCustomLocation(null); setOrigin("first"); }
     else { setCustomLocation(point); setOrigin("custom"); }
-    setPicking(false);
+    setPicking(false); setLocationError("");
   }
-  function cancelPicking() { setPicking(false); if (!customLocation) setOrigin("first"); }
+  function cancelPicking() { setPicking(false); setLocationError(""); if (!customLocation) setOrigin("first"); }
   function reset() {
     locationRequest.current++;
     setLegSelection(null); setMode("walk"); setOrigin("first");
@@ -86,7 +93,8 @@ export function useCourseDirections(stops: RouteStop[], enabled = true, initialS
 }
 type TravelState = ReturnType<typeof useCourseDirections>;
 
-export function useTravelOverlay(map: KakaoMap | null, maps: KakaoMaps | null, travel: TravelState) {
+export function useTravelOverlay(map: KakaoMap | null, maps: KakaoMaps | null, travel: TravelState, options: { lineColor?: string } = {}) {
+  const lineColor = options.lineColor;
   const { data, location, origin, picking, pickLocation, selectedLeg } = travel;
   const [viewport, setViewport] = useState(0);
   const routeBands = useMemo(() => splitRouteOverlaps(data?.legs.map((leg) => leg.paths) ?? []), [data]);
@@ -147,7 +155,7 @@ export function useTravelOverlay(map: KakaoMap | null, maps: KakaoMaps | null, t
       return { band, leg, width, offset: (index - (band.legs.length - 1) / 2) * width };
     }));
     lanes.sort((a, b) => Number(a.leg === selectedLeg) - Number(b.leg === selectedLeg));
-    lanes.forEach(({ band, leg, width, offset }) => stroke(offsetRouteBand(band.points, offset), legColor(leg), width, selectedLeg === null || selectedLeg === leg ? 1 : .22, band.legs, leg));
+    lanes.forEach(({ band, leg, width, offset }) => stroke(offsetRouteBand(band.points, offset), lineColor ?? legColor(leg), width, selectedLeg === null || selectedLeg === leg ? 1 : .22, band.legs, leg));
     for (const { leg, index } of legs) {
       if ((selectedLeg !== null && selectedLeg !== index) || placedArrows.length >= 3) continue;
       const paths = leg.paths.map((path) => path.map((point) => ({ ...point, ...projection.containerPointFromCoords(new maps.LatLng(point.lat, point.lng)) })));
@@ -168,7 +176,7 @@ export function useTravelOverlay(map: KakaoMap | null, maps: KakaoMaps | null, t
       arrow.setAttribute("class", "course-route-direction"); arrow.setAttribute("data-leg", String(index));
       arrow.setAttribute("d", "M-3 -4L2 0L-3 4");
       arrow.setAttribute("transform", `translate(${x} ${y}) rotate(${candidate.angle * 180 / Math.PI})`);
-      arrow.style.setProperty("--route-color", legColor(index));
+      arrow.style.setProperty("--route-color", lineColor ?? legColor(index));
       svg.appendChild(arrow); placedArrows.push(candidate);
     }
     if (data) overlays.push(new maps.CustomOverlay({ map, position: anchorCoordinate, content: surface, xAnchor: .5, yAnchor: .5, zIndex: 2 }));
@@ -177,7 +185,7 @@ export function useTravelOverlay(map: KakaoMap | null, maps: KakaoMaps | null, t
       overlays.push(new maps.CustomOverlay({ map, position: new maps.LatLng(location.lat, location.lng), content: label, yAnchor: 1, zIndex: 14 }));
     }
     return () => overlays.forEach((overlay) => overlay.setMap(null));
-  }, [map, maps, data, location, origin, selectedLeg, viewport, travel.points, routeBands]);
+  }, [map, maps, data, location, origin, selectedLeg, viewport, travel.points, routeBands, lineColor]);
 }
 
 export function CourseTravelPanel({ travel, stops, onFit, showDirections = true, originReplacement }: { travel: TravelState; stops: RouteStop[]; onFit?: () => void; showDirections?: boolean; originReplacement?: ReactNode }) {

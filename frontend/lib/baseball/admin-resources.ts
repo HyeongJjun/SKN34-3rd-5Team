@@ -1,4 +1,6 @@
-export type AdminResource = { name: string; label: string; group: string; fields: string[] };
+import type { AdminResourceName } from "./wire";
+
+export type AdminResource = { name: AdminResourceName; label: string; group: string; fields: string[] };
 const definitions: [string, string, string, string][] = [
   ["teams", "구단", "구단·구장", "id team_code team_name_ko"],
   ["stadiums", "구장", "구단·구장", "id stadium_code stadium_name_ko address longitude latitude geocode_source facility_manager game_operator phone_general phone_facility phone_ticket collected_at"],
@@ -20,9 +22,9 @@ const definitions: [string, string, string, string][] = [
   ["stadium-contents", "부가 콘텐츠", "교통·시설", "id record_code stadium_id content_type name floor location official_description operating_condition collected_at"],
   ["facilities", "편의시설", "교통·시설", "id record_code stadium_id facility_type floor side nearby_section gate gender indoor_outdoor location_detail collected_at"],
 ];
-export const adminResources: AdminResource[] = definitions.map(([name, label, group, fields]) => ({ name, label, group, fields: fields.split(" ") }));
+export const adminResources: AdminResource[] = definitions.map(([name, label, group, fields]) => ({ name: name as AdminResourceName, label, group, fields: fields.split(" ") }));
 export const adminResourceNames = new Set(adminResources.map(item => item.name));
-export const relationResources: Record<string, string> = { team_id: "teams", home_team_id: "teams", away_team_id: "teams", stadium_id: "stadiums", postseason_stage_id: "postseason-stages", home_context_id: "home-contexts", seat_zone_id: "seat-zones", game_id: "games", seat_map_id: "seat-maps", seat_scope_id: "seat-scopes", food_store_id: "food-stores" };
+export const relationResources: Record<string, AdminResourceName> = { team_id: "teams", home_team_id: "teams", away_team_id: "teams", stadium_id: "stadiums", postseason_stage_id: "postseason-stages", home_context_id: "home-contexts", seat_zone_id: "seat-zones", game_id: "games", seat_map_id: "seat-maps", seat_scope_id: "seat-scopes", food_store_id: "food-stores" };
 export const booleanFields = new Set(["accessible", "reservation_required"]);
 export const nullableFields = new Set(["facility_manager", "game_operator", "phone_general", "phone_facility", "phone_ticket", "home_team_id", "away_team_id", "stadium_id", "postseason_stage_id", "game_id", "home_score", "away_score", "group_size", "valid_from", "valid_to", "open_at", "max_tickets", "parking_spaces", "accessible", "reservation_required", "location_qty"]);
 export const numericFields = new Set(adminResources.flatMap(item => item.fields.filter(field => field === "id" || field.endsWith("_id") || /^(season|rank|wins|losses|draws|.*score|.*size|.*qty|.*no|price_krw|max_tickets|parking_spaces|longitude|latitude)$/.test(field))));

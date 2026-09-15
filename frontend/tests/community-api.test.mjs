@@ -9,13 +9,22 @@ const { outputText } = ts.transpileModule(source, { compilerOptions: { target: t
 const categoryValues = ["잡담", "질문", "응원", "경기토론", "전력토론", "소식·정보", "이적·신인", "직관후기", "좌석·예매", "직관준비", "굿즈", "사진·영상"];
 const teamCodes = ["LG", "HH", "SK", "SS", "NC", "KT", "LT", "HT", "OB", "WO"];
 let memberHandler = async () => { throw new Error("unexpected authenticated request"); };
+const apiRequest = async (path, init, fetcher = fetch) => {
+  const response = await fetcher(path, init);
+  if (response.status === 204) return null;
+  const value = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(value?.detail ?? "요청 실패");
+  return value;
+};
 const testModule = { exports: {} };
 const require = name => name === "react"
   ? { useEffect() {}, useSyncExternalStore() {} }
   : name === "./community-post-category"
     ? { communityPostCategories: categoryValues }
+    : name === "./api/client"
+      ? { apiRequest }
     : name === "./member-auth-request"
-      ? { memberFetch: (...args) => memberHandler(...args), memberError: (value, fallback) => value?.detail ?? fallback }
+      ? { memberFetch: (...args) => memberHandler(...args) }
       : { teamBoards: teamCodes.map(code => ({ code })) };
 new Function("module", "exports", "require", outputText)(testModule, testModule.exports, require);
 const api = testModule.exports;

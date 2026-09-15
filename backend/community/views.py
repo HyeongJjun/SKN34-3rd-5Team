@@ -1,19 +1,21 @@
 from django.db import DataError, IntegrityError, transaction
 from django.db.models import Count, F, Q
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, PolymorphicProxySerializer, extend_schema, extend_schema_view
 from rest_framework import generics, status
 from rest_framework.exceptions import NotAuthenticated, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .models import CommunityPost, TEAM_CODES
-from .serializers import CommunityPostSerializer
+from .pagination import CommunityPostPageSerializer, CommunityPostPagination, CommunityPostQuery
+from .serializers import CommunityPostPatchSerializer, CommunityPostSerializer, CommunityPostWriteSerializer
 
 
 POST_INPUT_FIELDS = ("board", "team_code", "category", "title", "content")
 
 
 def post_queryset():
-    return CommunityPost.objects.annotate(
+    return CommunityPost.objects.prefetch_related("images").annotate(
         upvote_count=Count("votes", filter=Q(votes__value="up"), distinct=True),
         downvote_count=Count("votes", filter=Q(votes__value="down"), distinct=True),
         actual_comment_count=Count("comments", distinct=True),
@@ -24,8 +26,38 @@ def same_submission(post, validated_data):
     return all(getattr(post, field) == validated_data[field] for field in POST_INPUT_FIELDS)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        parameters=[
+            OpenApiParameter("board", OpenApiTypes.STR, enum=("free", "teams")),
+            OpenApiParameter("team", OpenApiTypes.STR),
+            OpenApiParameter("mine", OpenApiTypes.STR, enum=("1",)),
+            OpenApiParameter("page", {"type": "integer", "minimum": 1, "maximum": 2_147_483_647}),
+            OpenApiParameter("page_size", {"type": "integer", "minimum": 1, "maximum": 100}),
+            OpenApiParameter("q", {"type": "string", "maxLength": 200}),
+            OpenApiParameter("search_field", OpenApiTypes.STR, enum=("all", "title", "author")),
+        ],
+        responses={
+            200: PolymorphicProxySerializer(
+                component_name="CommunityPostListResponse",
+                serializers=[CommunityPostSerializer(many=True), CommunityPostPageSerializer],
+                resource_type_field_name=None,
+                many=False,
+            ),
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+    ),
+    post=extend_schema(
+        request=CommunityPostWriteSerializer,
+        parameters=[OpenApiParameter("Idempotency-Key", OpenApiTypes.STR, OpenApiParameter.HEADER, required=True)],
+        responses={200: CommunityPostSerializer, 201: CommunityPostSerializer, 400: OpenApiTypes.OBJECT, 401: OpenApiTypes.OBJECT, 409: OpenApiTypes.OBJECT},
+    ),
+)
 class CommunityPostListCreateView(generics.ListCreateAPIView):
     serializer_class = CommunityPostSerializer
+    pagination_class = CommunityPostPagination
     permission_classes = (AllowAny,)
     http_method_names = ("get", "post", "head", "options")
 
@@ -34,6 +66,7 @@ class CommunityPostListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         queryset = post_queryset()
+        query = CommunityPostQuery.from_params(self.request.query_params)
         board = self.request.query_params.get("board")
         team = self.request.query_params.get("team")
         mine = self.request.query_params.get("mine")
@@ -54,6 +87,13 @@ class CommunityPostListCreateView(generics.ListCreateAPIView):
             queryset = queryset.filter(owner=self.request.user)
         if board is not None:
             queryset = queryset.filter(board=board)
+        if query.q:
+            fields = {
+                "all": Q(title__icontains=query.q) | Q(content__icontains=query.q),
+                "title": Q(title__icontains=query.q),
+                "author": Q(author__icontains=query.q),
+            }
+            queryset = queryset.filter(fields[query.search_field])
         return queryset
 
     def create(self, request, *args, **kwargs):
@@ -90,6 +130,14 @@ class CommunityPostListCreateView(generics.ListCreateAPIView):
         return Response(self.get_serializer(post).data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema_view(
+    get=extend_schema(responses={200: CommunityPostSerializer, 404: OpenApiTypes.OBJECT}),
+    patch=extend_schema(
+        request=CommunityPostPatchSerializer,
+        responses={200: CommunityPostSerializer, 400: OpenApiTypes.OBJECT, 401: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    ),
+    delete=extend_schema(responses={204: OpenApiResponse(description="본문 없음"), 401: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT}),
+)
 class CommunityPostDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CommunityPostSerializer
     lookup_field = "source_id"

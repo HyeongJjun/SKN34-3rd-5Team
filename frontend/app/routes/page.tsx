@@ -7,7 +7,7 @@ import { Icon } from "@/components/icons";
 import { RouteNumber } from "@/components/route-number";
 import { formatRouteDate } from "@/components/route-card";
 import { RouteBoardSkeleton, RouteListSkeleton } from "@/components/route-skeleton";
-import { retryRoutes, useLikedRoutes, useRoutes, useRoutesError, useRoutesReady, useRouteViews } from "@/lib/routes";
+import { retryRoutes, useLikedRoutes, useRoutes, useRoutesError, useRoutesReady } from "@/lib/routes";
 import { routeContentToText } from "@/lib/route-content";
 import { CommunityNavigation } from "@/components/community-navigation";
 import { getTeamBoardHref } from "@/lib/team-community";
@@ -31,7 +31,6 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
   const ready = useRoutesReady();
   const loadError = useRoutesError();
   const liked = useLikedRoutes();
-  const views = useRouteViews();
   const filtered = routes.filter(route => {
     if (stadium !== "전체" && !normalize(route.stadium).includes(normalize(stadium))) return false;
     const content = routeContentToText(route.content, route.contentFormat);
@@ -45,8 +44,8 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
   });
   const sorted = [...filtered].sort((a, b) => {
     const newest = b.createdAt.localeCompare(a.createdAt);
-    if (sort === "likes") return (b.likes + Number(liked.includes(b.id))) - (a.likes + Number(liked.includes(a.id))) || newest;
-    if (sort === "views") return ((b.views ?? 0) + (views[b.id] ?? 0)) - ((a.views ?? 0) + (views[a.id] ?? 0)) || newest;
+    if (sort === "likes") return b.likes - a.likes || newest;
+    if (sort === "views") return (b.views ?? 0) - (a.views ?? 0) || newest;
     return newest;
   });
   const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
@@ -99,8 +98,8 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
             <colgroup><col className="community-col-number"/><col/><col className="community-col-author"/><col className="community-col-metric"/><col className="community-col-metric"/><col className="community-col-date"/></colgroup>
             <thead><tr><th scope="col">번호</th><th scope="col" className="community-title-column">제목</th><th scope="col">글쓴이</th><th scope="col">좋아요</th><th scope="col">조회</th><th scope="col">작성일</th></tr></thead>
             <tbody>{visible.length ? visible.map((route) => {
-              const likeCount = route.likes + Number(liked.includes(route.id));
-              const viewCount = (route.views ?? 0) + (views[route.id] ?? 0);
+              const likeCount = route.likes;
+              const viewCount = route.views ?? 0;
               const shortStadium = stadiums.slice(1).find(item => route.stadium.includes(item)) ?? route.stadium;
               return <tr key={route.id}>
                 <td className="community-number"><RouteNumber route={route} /></td>

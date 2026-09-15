@@ -9,7 +9,7 @@ import { Baseball, Icon } from "./icons";
 import { GameSchedule } from "./game-schedule";
 import { RouteCard } from "./route-card";
 import { RouteCardsSkeleton } from "./route-skeleton";
-import { useLikedRoutes, useRoutes, useRoutesReady } from "@/lib/routes";
+import { useRoutes, useRoutesReady } from "@/lib/routes";
 
 const stadiumTeams = [
   { code: "lg", name: "LG 트윈스", stadium: "JAMSIL" },
@@ -35,9 +35,8 @@ export function HomePage() {
   const { openChat } = useChat();
   const [question, setQuestion] = useState("");
   const routes = useRoutes();
-  const liked = useLikedRoutes();
   const ready = useRoutesReady();
-  const popular = routes.filter(route => route.isSample).sort((a, b) => (b.likes + Number(liked.includes(b.id))) - (a.likes + Number(liked.includes(a.id))) || b.createdAt.localeCompare(a.createdAt)).slice(0, 3);
+  const popular = routes.filter(route => route.isSample).sort((a, b) => b.likes - a.likes || b.createdAt.localeCompare(a.createdAt)).slice(0, 3);
   return (
     <main>
       <section className="home-hero" aria-labelledby="hero-heading">

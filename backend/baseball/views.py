@@ -12,10 +12,11 @@ from rest_framework.exceptions import MethodNotAllowed, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from . import models
 from .permissions import ActiveStaffOnly
-from .serializers import PublicFoodStoreSerializer, PublicSeatMapSerializer, PublicSeatScopeSerializer, PublicStadiumSerializer, PublicTeamSerializer, PublicTicketPriceSerializer, RESOURCE_MODELS, RESOURCE_SERIALIZERS
+from .serializers import BaseballErrorSerializer, PublicFoodStoreSerializer, PublicSeatMapSerializer, PublicSeatScopeSerializer, PublicStadiumSerializer, PublicTeamSerializer, PublicTicketPriceSerializer, RESOURCE_DETAIL_SERIALIZERS, RESOURCE_MODELS, RESOURCE_SERIALIZERS
 
 
 class BaseballPages(PageNumberPagination):
@@ -162,7 +163,35 @@ class BaseballManageViewSet(viewsets.ModelViewSet):
 
 
 def viewset_for(resource):
-    return type(f"{RESOURCE_MODELS[resource].__name__}ViewSet", (BaseballManageViewSet,), {"resource": resource})
+    serializer = RESOURCE_SERIALIZERS[resource]
+    detail_serializer = RESOURCE_DETAIL_SERIALIZERS[resource]
+    return extend_schema_view(
+        list=extend_schema(responses={200: serializer}),
+        retrieve=extend_schema(responses={200: detail_serializer, 404: BaseballErrorSerializer}),
+        create=extend_schema(
+            request=serializer,
+            responses={201: serializer, 400: BaseballErrorSerializer, 409: BaseballErrorSerializer},
+        ),
+        partial_update=extend_schema(
+            request=serializer,
+            responses={
+                200: detail_serializer,
+                400: BaseballErrorSerializer,
+                404: BaseballErrorSerializer,
+                409: BaseballErrorSerializer,
+                412: BaseballErrorSerializer,
+            },
+        ),
+        destroy=extend_schema(
+            responses={
+                204: None,
+                400: BaseballErrorSerializer,
+                404: BaseballErrorSerializer,
+                409: BaseballErrorSerializer,
+                412: BaseballErrorSerializer,
+            }
+        ),
+    )(type(f"{RESOURCE_MODELS[resource].__name__}ViewSet", (BaseballManageViewSet,), {"resource": resource}))
 
 
 RESOURCE_VIEWSETS = {resource: viewset_for(resource) for resource in RESOURCE_MODELS}
@@ -244,7 +273,16 @@ class StadiumChildren(BaseballPublicMixin, generics.ListAPIView):
 
 public_urlpatterns = [path("teams/", PublicTeamList.as_view()), path("stadiums/", PublicStadiumList.as_view()), path("stadiums/<str:code>/", PublicStadiumDetail.as_view())]
 for suffix, resource in (("seat-zones", "seat-zones"), ("ticket-prices", "ticket-prices"), ("seat-maps", "seat-maps"), ("seat-scopes", "seat-scopes"), ("seat-views", "seat-views"), ("food-stores", "food-stores"), ("transports", "transports"), ("facilities", "facilities"), ("contents", "stadium-contents")):
-    public_urlpatterns.append(path(f"stadiums/<str:code>/{suffix}/", type(f"Public{resource}List", (StadiumChildren,), {"relation": resource}).as_view()))
+    serializer = {
+        "food-stores": PublicFoodStoreSerializer,
+        "seat-maps": PublicSeatMapSerializer,
+        "seat-scopes": PublicSeatScopeSerializer,
+        "ticket-prices": PublicTicketPriceSerializer,
+    }.get(resource, RESOURCE_SERIALIZERS[resource])
+    view = extend_schema_view(list=extend_schema(responses={200: serializer}))(
+        type(f"Public{RESOURCE_MODELS[resource].__name__}List", (StadiumChildren,), {"relation": resource})
+    )
+    public_urlpatterns.append(path(f"stadiums/<str:code>/{suffix}/", view.as_view()))
 
 
 class PublicResourceList(BaseballPublicMixin, generics.ListAPIView):
@@ -309,4 +347,8 @@ class PublicResourceList(BaseballPublicMixin, generics.ListAPIView):
 
 
 for suffix, resource in (("games", "games"), ("standings", "standing-histories"), ("postseason-stages", "postseason-stages"), ("ticket-prices", "ticket-prices"), ("ticket-policies", "ticket-policies")):
-    public_urlpatterns.append(path(f"{suffix}/", type(f"Public{resource}List", (PublicResourceList,), {"resource": resource}).as_view()))
+    serializer = PublicTicketPriceSerializer if resource == "ticket-prices" else RESOURCE_SERIALIZERS[resource]
+    view = extend_schema_view(list=extend_schema(responses={200: serializer}))(
+        type(f"Public{RESOURCE_MODELS[resource].__name__}List", (PublicResourceList,), {"resource": resource})
+    )
+    public_urlpatterns.append(path(f"{suffix}/", view.as_view()))
