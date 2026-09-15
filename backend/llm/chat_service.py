@@ -23,7 +23,7 @@ class ChatService:
     MAX_TOOL_CALLS = 4
 
     def __init__(self, llm=None, tools=None):
-        self.llm = llm or ChatOpenAI(model="gpt-5.4-mini", timeout=30, max_retries=0)
+        self.llm = llm or ChatOpenAI(model="gpt-5.6-luna", temperature=0, timeout=30, max_retries=0, reasoning_effort="none")
         self.tools = tuple(tools or create_baseball_tools())
         self.tool_map = {tool.name: tool for tool in self.tools}
         self.prompt = self.get_prompt()
