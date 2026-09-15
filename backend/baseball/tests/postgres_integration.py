@@ -25,6 +25,7 @@ from baseball.query_repository import (  # noqa: E402
     BaseballQueryTimeoutError,
 )
 from baseball.query_service import BaseballQueryService  # noqa: E402
+from llm.tools import create_baseball_tools  # noqa: E402
 
 
 class BaseballPostgresIntegrationTest(unittest.TestCase):
@@ -142,6 +143,25 @@ class BaseballPostgresIntegrationTest(unittest.TestCase):
         )
         for query in queries:
             self.assertTrue(self.service.execute_baseball_select(query, {}, 10)["rows"])
+
+    def test_langchain_tools_use_restricted_database_and_deny_writes(self):
+        schema_tool, select_tool = create_baseball_tools(self.service)
+        self.assertEqual(len(schema_tool.invoke({})["tables"]), 19)
+        result = select_tool.invoke(
+            {
+                "sql": (
+                    'SELECT t.team_name_ko, COUNT(g.id) AS games FROM "TEAM" t '
+                    'JOIN "GAME" g ON g.home_team_id=t.id GROUP BY t.id'
+                ),
+                "max_rows": 10,
+            }
+        )
+        self.assertEqual(result["columns"], ["team_name_ko", "games"])
+        self.assertEqual(result["rows"], [["홈", 1]])
+        self.assertEqual(
+            select_tool.invoke({"sql": 'DELETE FROM "TEAM"'}),
+            "단일 SELECT 문만 허용됩니다.",
+        )
 
     def test_parameters_truncation_timeout_and_recovery(self):
         injected = "홈' OR 1=1 --"
