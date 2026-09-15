@@ -1,6 +1,7 @@
 import { memberError, memberFetch } from "../member-auth-request";
 import { isRecord, parseChatRequest } from "./validation";
-import type { ChatReply, ChatRequest, ChatStatus } from "./types";
+import { parseChatCourse } from "./course";
+import type { ChatCourse, ChatReply, ChatRequest, ChatStatus } from "./types";
 import { MAX_REPLY_LENGTH } from "./types";
 
 const REQUEST_TIMEOUT_MS = 55_000;
@@ -113,7 +114,7 @@ async function readMemberStream(response: Response, sessionId: number, callbacks
     throw new ChatClientError("스트림 응답을 확인하지 못했어요.", 502, true, sessionId);
   }
   const reader = response.body.getReader(), decoder = new TextDecoder();
-  let buffer = "", answer = "", checkpoint: ChatCheckpoint | null = null, done = false;
+  let buffer = "", answer = "", checkpoint: ChatCheckpoint | null = null, done = false, course: ChatCourse | undefined;
   const consume = (frame: string) => {
     const [eventLine, ...lines] = frame.split(/\r?\n/);
     const event = eventLine?.startsWith("event:") ? eventLine.slice(6).trim() : "";
@@ -145,6 +146,7 @@ async function readMemberStream(response: Response, sessionId: number, callbacks
       if (!checkpoint || !answer.trim()) throw new ChatClientError("최종 답변을 확인하지 못했어요.", 502, true, sessionId);
       checkpoint = parseCheckpoint(value, answer, checkpoint.turnId);
       callbacks.onCheckpoint?.(checkpoint);
+      course = parseChatCourse(value);
       done = true;
       return;
     }
@@ -169,7 +171,8 @@ async function readMemberStream(response: Response, sessionId: number, callbacks
     let result = await finalizeMemberTurn(sessionId, stopped ?? checkpoint, stopped ? "stopped" : "completed", callbacks);
     const racedStop = callbacks.getStop?.();
     if (result.completionStatus === "completed" && racedStop) result = await finalizeMemberTurn(sessionId, racedStop, "stopped", callbacks);
-    return result;
+    // 중간에 멈춘 답에는 코스 카드를 붙이지 않는다 (본문과 코스가 어긋난다)
+    return result.completionStatus === "completed" && course ? { ...result, course } : result;
   } catch (error) {
     const stopped = callbacks.getStop?.();
     if (stopped) return finalizeMemberTurn(sessionId, stopped, "stopped", callbacks);
@@ -182,7 +185,7 @@ async function readGuestStream(response: Response, callbacks: ChatStreamCallback
     throw new ChatClientError("스트림 응답을 확인하지 못했어요.", 502);
   }
   const reader = response.body.getReader(), decoder = new TextDecoder();
-  let buffer = "", answer = "", done = false;
+  let buffer = "", answer = "", done = false, course: ChatCourse | undefined;
   callbacks.onCheckpoint?.({ turnId: "guest", receipt: "", prefix: "" });
   const consume = (frame: string) => {
     const [eventLine, ...lines] = frame.split(/\r?\n/), event = eventLine?.slice(6).trim();
@@ -199,6 +202,7 @@ async function readGuestStream(response: Response, callbacks: ChatStreamCallback
     }
     if (event === "done") {
       if (!answer.trim() || value.assistant_message !== answer) throw new ChatClientError("최종 답변을 확인하지 못했어요.", 502);
+      course = parseChatCourse(value);
       done = true; return;
     }
     if (event === "error") throw new ChatClientError(typeof value.detail === "string" && value.detail.length <= 200 ? value.detail : fallback(502), 502);
@@ -218,7 +222,8 @@ async function readGuestStream(response: Response, callbacks: ChatStreamCallback
     }
     if (!done || buffer.trim()) throw new ChatClientError("답변 완료를 확인하지 못했어요.", 502);
     const stop = callbacks.getStop?.();
-    return { ...GUEST_STATUS, reply: stop ? (stop.prefix.trim() ? stop.prefix : "") : answer, completionStatus: stop ? "stopped" : "completed" };
+    if (stop) return { ...GUEST_STATUS, reply: stop.prefix.trim() ? stop.prefix : "", completionStatus: "stopped" };
+    return { ...GUEST_STATUS, reply: answer, completionStatus: "completed", ...(course ? { course } : {}) };
   } catch (error) {
     const stop = callbacks.getStop?.();
     if (stop) return { ...GUEST_STATUS, reply: stop.prefix.trim() ? stop.prefix : "", completionStatus: "stopped" };

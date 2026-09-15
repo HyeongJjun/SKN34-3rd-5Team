@@ -14,6 +14,7 @@ import re
 from . import persona
 from .club import agent as club
 from .course import agent as course
+from .nearby import agent as nearby
 from .venue import agent as venue
 
 log = logging.getLogger(__name__)
@@ -70,11 +71,14 @@ WEAK_CLUB_WORDS = {"얼마", "요금", "가격", "다음", "취소"}
 
 
 def route(question: str, intent: str | None = None) -> str:
-    """'course' | 'venue' | 'club' | 'both' | 'scope'. intent 는 프론트 context.intent ("route"|"baseball"|"stadium")"""
+    """'course' | 'nearby' | 'venue' | 'club' | 'both' | 'scope'. intent 는 프론트 context.intent ("route"|"baseball"|"stadium")"""
     if OFF_TOPIC.search(question) and not BASEBALL.search(question):
         return "scope"
     if intent == "route" or COURSE.search(question):
         return "course"
+    # 숙박·산책·실내놀거리·편의점 — RAG 에 없는 종류라 카카오 실시간 조회(nearby)로 보낸다 (2026-09-15)
+    if nearby.READY and nearby.wants(question):
+        return "nearby"
     v, c = _hits(question, VENUE_WORDS), _hits(question, CLUB_WORDS)
     if v:
         c = [w for w in c if w not in WEAK_CLUB_WORDS]
@@ -99,6 +103,10 @@ def _call(domain, question, history, hint_stadium):
         return domain.answer(question, history=history, hint_stadium=hint_stadium)
     except Exception:            # 한 도메인이 죽어도 챗봇 전체가 죽지 않게
         log.exception("rag domain failed: %s", domain.__name__)
+        if domain is nearby:     # 카카오 조회가 죽으면 venue(RAG)라도 답하게
+            r = _call(venue if venue.READY else club, question, history, hint_stadium)
+            r["route"] = f"nearby:error>{r['route']}"
+            return r
         if domain is course:     # course 가 죽으면 venue(준비됐으면) → club 순으로 맛집 목록이라도 준다
             r = _call(venue if venue.READY else club, question, history, hint_stadium)
             r["route"] = f"course:error>{r['route']}"
@@ -128,6 +136,9 @@ def answer(question: str, history: list[dict] | None = None, stadium_name: str |
     if kind == "course" and course.READY:
         result = _call(course, question, history, hint)
         result["route"] = f"course>{result['route']}"
+    elif kind == "nearby":
+        result = _call(nearby, question, history, hint)
+        result["route"] = f"nearby>{result['route']}"
     elif kind == "venue":
         result = _call(venue if use_venue else club, question, history, hint)
         result["route"] = f"venue>{result['route']}" if use_venue else f"venue(not ready)>club>{result['route']}"

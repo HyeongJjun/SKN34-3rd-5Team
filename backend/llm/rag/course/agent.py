@@ -7,6 +7,7 @@
                카테고리별 벡터 검색 → 동행 ban·취향 boost·반경으로 거름              LLM 0회
     ④ 선택     후보에 P1..Pn 과 방위("북동 900m")를 붙여 제시 → JSON 으로 키만 받음   LLM 1회
     ⑤ 동선     총 도보를 재고 너무 길면 같은 카테고리의 가까운 후보로 교체  geo.py     LLM 0회
+    ⑤' 이동    도보·자동차·대중교통별 구간 시간 + 주차/대중교통 안내(DB)  transport.py LLM 0회
     ⑥ 시간표   경기 시작에서 역산해 도착·출발 시각 계산                timeline.py     LLM 0회
     ⑦ 조립     키 → DB 값(이름·좌표·주소·kakao id)으로 places[] + 코스 저장 payload  LLM 0회
 
@@ -14,6 +15,7 @@
 이름·좌표·주소·시각·거리는 전부 DB 값이거나 코드가 계산한 값이다.
 
 디스패처와의 약속: answer(question, history, hint_stadium) -> {"answer","sources","route","places"} · READY
+추가 키 (프론트 지도 카드용): "stadiumCode", "travel" {"mode","label","lines","legs"}, "coursePayload"
 
 places[i] 는 프론트 RouteStop / travel.CourseStop 과 같은 키를 쓴다:
     {"phase": "BEFORE"|"GAME"|"AFTER", "name", "lat", "lng", "category": "FOOD"|"CAFE"|"SPOT"|"STADIUM",
@@ -33,7 +35,9 @@ from langchain_openai import ChatOpenAI
 from ..club import structured
 from ..club.retrieval import EF_SEARCH, embed_many
 from ..club.router import detect_stadium
-from . import geo, save, slots, timeline
+from ..nearby import agent as nearby_agent
+from ..nearby import kakao
+from . import geo, save, slots, timeline, transport
 from .prompts import NO_GAME, NO_PLACES, SYSTEM, USER_TEMPLATE, WARN_THIRD_PARTY
 
 log = logging.getLogger(__name__)
@@ -45,7 +49,11 @@ MAX_DISTANCE_M = 2500                           # 도보 30분 정책 (먹거리
 TIGHT_DISTANCE_M = 1200                         # "퇴근하고 바로" 처럼 촉박할 때 좁히는 반경
 EVENING_FROM = "17:00"                          # 이 시각 이후 시작이면 야간 경기로 본다
 
-CAT_LABEL = {"FOOD_OUT": "FOOD", "CAFE": "CAFE", "SPOT": "SPOT"}
+CAT_LABEL = {"FOOD_OUT": "FOOD", "CAFE": "CAFE", "SPOT": "SPOT", "STAY": "STAY", "WALK": "WALK", "INDOOR": "INDOOR"}
+# 카카오 실시간 조회로 더하는 종류 (RAG 에 없는 것) → 코스 카테고리
+EXTRA_CATEGORY = {"stay": "STAY", "walk": "WALK", "indoor": "INDOOR"}
+EXTRA_K = 5
+NO_STAY = "숙소 후보는 지금 불러오지 못했어요. 옆 지도의 '숙박' 카테고리에서 골라 코스 끝에 담아 보세요."
 # (카테고리, 어떤 쿼리 벡터로 찾을지, 몇 개를 LLM 에 보여줄지)
 SEARCHES = [("FOOD_OUT", "meal", 8), ("FOOD_OUT", "after", 4), ("CAFE", "after", 4), ("SPOT", "after", 4)]
 
@@ -227,7 +235,7 @@ def call_llm(question, game_text, cands, anchor, sl, evening):
     user = USER_TEMPLATE.format(
         game=game_text, candidates=_candidates_text(cands, anchor), question=question,
         situation=slots.prompt_line(sl) or "(특별한 조건 없음)",
-        after_hint="야식·술집·카페" if evening else "카페·명소·산책",
+        after_hint=transport.after_hint(sl.get("mode"), evening, sl.get("taxi")),
     )
     t0 = time.perf_counter()
     out = llm().invoke([SystemMessage(content=SYSTEM), HumanMessage(content=user)]).content
@@ -274,10 +282,20 @@ def fallback_course(cands, evening, sl):
     else:
         after = by.get("CAFE", [])[:1] or by.get("SPOT", [])[:1] or meal[1:2]
 
-    course = [{"key": p["key"], "phase": "BEFORE", "reason": "경기 전 식사"} for p in before]
+    scope = sl.get("scope") or "both"
+    if scope == "after":
+        before = []
+    if scope == "before":
+        after = []
+        wants_cafe = any(w in (sl.get("prefs") or []) for w in ("카페", "커피", "디저트", "베이커리"))
+        if wants_cafe and by.get("CAFE"):
+            before = list(before) + by["CAFE"][:1]
+    course = [{"key": p["key"], "phase": "BEFORE",
+               "reason": "경기 전 커피 한잔" if p["category"] == "CAFE" else "경기 전 식사"} for p in before]
     course.append({"key": "STADIUM", "phase": "GAME", "reason": "경기 관람"})
+    driving = sl.get("mode") == "car" and not sl.get("taxi")
     course += [{"key": p["key"], "phase": "AFTER",
-                "reason": "경기 후 한잔" if evening else "경기 후 여유롭게"} for p in after[:1]]
+                "reason": "경기 후 한잔" if evening and not driving and p in bar else "경기 후 여유롭게"} for p in after[:1]]
     if sl["spare"] == "long" and by.get("SPOT"):
         spot = next((p for p in by["SPOT"] if p["key"] not in {c["key"] for c in course}), None)
         if spot:
@@ -286,7 +304,8 @@ def fallback_course(cands, evening, sl):
 
 
 # ── 5. 답변 조립 ─────────────────────────────────────────────────────────────
-def build_answer(intro, course, lookup, tl, walk, sl, assumed):
+def build_answer(intro, course, lookup, tl, walk, sl, assumed, travel=None):
+    travel = travel or {}
     lines = [intro] if intro else []
     lines.append("")
     lines += timeline.text_lines(course, lookup, tl)
@@ -294,10 +313,15 @@ def build_answer(intro, course, lookup, tl, walk, sl, assumed):
     if tail:
         lines.append("")
         lines.append(" · ".join(tail))
+    if travel.get("lines"):
+        lines += travel["lines"]
     if assumed:
         lines.append(f"경기 일정이 자료에 없어서 평일 저녁 경기 기준({DEFAULT_GAME_TIME} 시작)으로 짰어요.")
     if sl.get("note"):
         lines.append(sl["note"])
+    if "stay" in (sl.get("extras") or []) and not any(lookup[c["key"]]["category"] == "STAY" for c in course):
+        lines.append(NO_STAY)
+    lines += travel.get("notes") or []
     lines.append(WARN_THIRD_PARTY)
     return "\n".join(lines).strip()
 
@@ -330,6 +354,10 @@ def answer(question, history=None, hint_stadium=None):
         route.append(f"retry:-{len(sl['exclude'])}")
     if sl["spare"] != "normal":
         route.append(f"spare:{sl['spare']}")
+    if sl.get("scope") != "both":
+        route.append(f"scope:{sl['scope']}")
+    if sl.get("mode"):
+        route.append(f"mode:{sl['mode']}{'(taxi)' if sl.get('taxi') else ''}")
 
     # ② 경기
     t0 = time.perf_counter()
@@ -361,6 +389,25 @@ def answer(question, history=None, hint_stadium=None):
         raw = search_places(vec_meal if which == "meal" else vec_after, code, category, k * 3)
         cands += pick(raw, k, sl, radius, seen_names=seen)
     timings["retrieval_ms"] = round((time.perf_counter() - t0) * 1000)
+
+    # ③' RAG 에 없는 종류(숙박·산책·실내) — 지도와 같은 카카오 실시간 조회로 후보를 더한다
+    extras = sl.get("extras") or []
+    if extras:
+        t0 = time.perf_counter()
+        for kind in extras:
+            found = nearby_agent.narrow(kakao.nearby(code, kind), kind, question)
+            added = 0
+            for p in found:
+                if p["distance"] > max(radius, MAX_DISTANCE_M) or (sl["ban"] and any(w in p["detail"] for w in sl["ban"])):
+                    continue
+                cands.append({"dist": 0.5, "category": EXTRA_CATEGORY[kind], "name": p["name"], "detail": p["detail"],
+                              "distance": p["distance"], "lat": p["lat"], "lng": p["lng"], "address": p["address"],
+                              "placeId": p["placeId"], "placeUrl": p["placeUrl"], "doc_id": f"kakao:{p['placeId']}"})
+                added += 1
+                if added >= EXTRA_K:
+                    break
+            route.append(f"live:{kind}:{added}")
+        timings["kakao_ms"] = round((time.perf_counter() - t0) * 1000)
     if not cands:
         msg = NO_PLACES.format(stadium_ko=STADIUM_KO.get(code, code))
         if sl["retry"]:
@@ -381,9 +428,18 @@ def answer(question, history=None, hint_stadium=None):
         course, intro = parse_course(raw, set(lookup))
     except Exception:
         log.exception("course llm failed")
+    scope = sl.get("scope") or "both"
+    if course and scope != "both":                       # 사용자가 말하지 않은 구간은 코드가 한 번 더 뺀다
+        drop = "AFTER" if scope == "before" else "BEFORE"
+        keep = "BEFORE" if scope == "before" else "AFTER"
+        course = [c for c in course if c["phase"] != drop]
+        kept = [c for c in course if c["phase"] == keep][:3]
+        course = [c for c in course if c["phase"] != keep] + kept
+        if not kept:
+            course = None
     if not course:
         course = fallback_course(cands, evening, sl)
-        intro = f"{game_text.split(' (')[0]} 기준으로 코스를 짜 봤어요."
+        intro = intro or f"{game_text.split(' (')[0]} 기준으로 코스를 짜 봤어요."
         route.append("fallback")
 
     if not any(c["phase"] == "GAME" for c in course):     # 구장은 항상 들어간다
@@ -393,39 +449,76 @@ def answer(question, history=None, hint_stadium=None):
         course = before + [c for c in course if c["phase"] != "BEFORE"]
     course.sort(key=lambda c: {"BEFORE": 0, "GAME": 1, "AFTER": 2}[c["phase"]])
 
+    # 산책·실내를 요청했는데 LLM 이 빠뜨렸으면 가장 가까운 한 곳을 경기 전(범위가 경기 후면 경기 후)에 넣는다
+    for kind in ("walk", "indoor"):
+        cat = EXTRA_CATEGORY[kind]
+        if kind not in extras or any(lookup[c["key"]]["category"] == cat for c in course):
+            continue
+        pick_one = next((p for p in cands if p["category"] == cat), None)
+        if not pick_one:
+            continue
+        label = "산책하기 좋은 곳" if kind == "walk" else "실내에서 놀기 좋은 곳"
+        if sl.get("scope") == "after":
+            g = next(i for i, c in enumerate(course) if c["phase"] == "GAME")
+            course.insert(g + 1, {"key": pick_one["key"], "phase": "AFTER", "reason": f"경기 끝나고 {label}"})
+        else:
+            g = next(i for i, c in enumerate(course) if c["phase"] == "GAME")
+            course.insert(g, {"key": pick_one["key"], "phase": "BEFORE", "reason": f"경기 전 {label}"})
+        route.append(f"{kind}:added")
+
+    # 숙소는 요청했을 때만, 코스 맨 끝에 1곳. LLM 이 빠뜨리면 가장 가까운 숙소를 붙인다.
+    stays = [p for p in cands if p["category"] == "STAY"]
+    course = [c for c in course if lookup[c["key"]]["category"] != "STAY" or "stay" in extras]
+    chosen = next((c for c in course if lookup[c["key"]]["category"] == "STAY"), None)
+    course = [c for c in course if lookup[c["key"]]["category"] != "STAY"]
+    if "stay" in extras and (chosen or stays):
+        chosen = chosen or {"key": stays[0]["key"], "reason": "경기 끝나고 쉬어 갈 숙소"}
+        course.append({**chosen, "phase": "AFTER"})
+        route.append("stay:end")
+
     # ⑤ 동선 — 총 도보가 길면 같은 카테고리의 가까운 후보로 교체
     course, swapped = geo.optimize(course, lookup, cands)
     if swapped:
         route.append("geo:swap")
     points = [lookup[c["key"]] for c in course]
-    walk = geo.summary(points)
+    mode = sl.get("mode")
+    legs = transport.legs(points, mode)
+    walk = transport.summary(legs, mode, sl.get("taxi"))
+    travel = transport.info(code, mode, question)
+    travel["legs"] = legs
 
-    # ⑥ 시간표 — 경기 시작에서 역산
-    tl = timeline.build(course, lookup, game_time_of(game), geo.leg_minutes(points))
+    # ⑥ 시간표 — 경기 시작에서 역산 (구간 시간은 이동수단 기준)
+    tl = timeline.build(course, lookup, game_time_of(game), transport.leg_minutes(legs))
 
     # ⑦ 조립 — 이름·좌표·주소는 전부 DB 값, 시각·거리는 코드가 계산한 값
     places = []
-    for c, row in zip(course, tl["rows"]):
+    for i, (c, row) in enumerate(zip(course, tl["rows"])):
         p = lookup[c["key"]]
+        nxt = legs[i] if i < len(legs) else None          # 이 장소에서 다음 장소까지
         places.append({
             "phase": c["phase"], "name": p["name"], "lat": p["lat"], "lng": p["lng"],
             "category": "STADIUM" if c["key"] == "STADIUM" else CAT_LABEL[p["category"]],
             "placeId": p["placeId"], "address": p["address"], "placeUrl": p["placeUrl"],
             "distance": p["distance"], "reason": c["reason"],
             "time": row["time"], "stayMin": row["stayMin"],
+            "nextLeg": nxt,
         })
     sources = [{"doc_id": lookup[c["key"]]["doc_id"],
                 "grade": "OFFICIAL" if c["key"] == "STADIUM" else "THIRD_PARTY",
                 "category": "STADIUM" if c["key"] == "STADIUM" else lookup[c["key"]]["category"], "stadium": code}
                for c in course if lookup[c["key"]].get("doc_id")]
 
-    text = build_answer(intro, course, lookup, tl, walk, sl, assumed)
+    text = build_answer(intro, course, lookup, tl, walk, sl, assumed, travel)
     if not _WARN.search(text):
         text = f"{text}\n{WARN_THIRD_PARTY}"
 
     route.append(f"course:{code}:{game['date'] + ' ' + game['time'] if game else 'assumed'}:{len(cands)}cands")
     return {
         "answer": text, "sources": sources, "route": " ".join(route), "places": places, "timing": timings,
+        "stadiumCode": code,
+        "travel": {"mode": travel["mode"], "label": travel["label"], "taxi": travel["taxi"],
+                   "summary": walk, "lines": travel["lines"], "legs": legs},
         "coursePayload": save.course_payload(places, stadium_ko=STADIUM_KO.get(code, code), game=game,
-                                             walk_summary=walk, total_min=tl["totalMin"], slots_info=sl),
+                                             walk_summary=walk, total_min=tl["totalMin"], slots_info=sl,
+                                             travel_info=travel),
     }
