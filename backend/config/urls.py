@@ -30,5 +30,6 @@ urlpatterns = [
         "chat/sessions/<int:session_id>/messages/",
         ChatMessageView.as_view(),
     ),
-    path('auth/',include('accounts.urls'))
+    path('auth/',include('accounts.urls')),
+    path('baseball/', include('baseball.urls')),
 ]

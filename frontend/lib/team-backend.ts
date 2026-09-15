@@ -1,6 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { ChatError } from "./chat/validation";
+import { ChatError, isRecord } from "./chat/validation";
 
 export function teamBackendUrl(path: string) {
   const base = process.env.CHAT_BACKEND_URL?.trim();
@@ -47,7 +47,7 @@ async function backendFetch(path: string, init: RequestInit) {
   }
 }
 
-export async function teamRequest(path: string, body: unknown, authenticated = true, signal?: AbortSignal, method: "GET" | "POST" | "PATCH" = "POST"): Promise<unknown> {
+export async function teamRequest(path: string, body: unknown, authenticated = true, signal?: AbortSignal, method: "GET" | "POST" | "PATCH" | "DELETE" = "POST"): Promise<unknown> {
   const jar = await cookies();
   if (authenticated && jar.has("kbo_logged_out")) throw new ChatError("팀 계정으로 로그인한 뒤 이용해 주세요.", 401);
   let access = jar.get("kbo_access")?.value;
@@ -70,14 +70,15 @@ export async function teamRequest(path: string, body: unknown, authenticated = t
   if (authenticated && response.status === 401) { await refreshAccess(); response = await invoke(); }
   if (!response.ok) {
     const data = await response.json().catch(() => null);
-    const fields = data && typeof data === "object" && !Array.isArray(data)
-      ? Object.fromEntries(Object.entries(data).filter(([, value]) => typeof value === "string" || Array.isArray(value)).map(([key, value]) => [key, Array.isArray(value) ? value.map(String) : [String(value)]]))
+    const fieldSource = isRecord(data) && isRecord(data.field_errors) ? data.field_errors : data;
+    const fields = fieldSource && typeof fieldSource === "object" && !Array.isArray(fieldSource)
+      ? Object.fromEntries(Object.entries(fieldSource).filter(([, value]) => typeof value === "string" || Array.isArray(value)).map(([key, value]) => [key, Array.isArray(value) ? value.map(String) : [String(value)]]))
       : undefined;
-    const detail = fields ? Object.values(fields).flat()[0] : undefined;
+    const detail = isRecord(data) && typeof data.message === "string" ? data.message : fields ? Object.values(fields).flat()[0] : undefined;
     if (response.status === 400) throw new ChatError(detail ?? "입력 내용을 확인해 주세요.", 400, fields);
     if (response.status === 401) throw new ChatError(detail ?? "아이디와 비밀번호를 확인하거나 다시 로그인해 주세요.", 401, fields);
     if (response.status === 403) throw new ChatError("이 기능을 이용할 권한이 없어요.", 403);
-    if (response.status === 404) throw new ChatError("채팅방을 찾지 못했어요. 새 대화를 시작해 주세요.", 404);
+    if (response.status === 404) throw new ChatError(detail ?? "요청한 데이터를 찾지 못했어요.", 404, fields);
     if (response.status === 429) throw new ChatError("요청이 많아요. 잠시 후 다시 시도해 주세요.", 429);
     if (response.status >= 500) throw new ChatError("팀 백엔드에서 요청을 처리하지 못했어요.", 502);
     throw new ChatError(detail ?? "요청을 처리하지 못했어요.", response.status, fields);

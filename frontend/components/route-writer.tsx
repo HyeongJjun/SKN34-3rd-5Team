@@ -7,7 +7,9 @@ import type { FormEvent, KeyboardEvent } from "react";
 import { ChatPopup } from "@/components/chat-popup";
 import Editor from "@/components/editor";
 import { NearbyRoutePlanner } from "@/components/nearby-route-planner";
-import { stadiums } from "@/lib/stadiums";
+import { adaptStadium } from "@/lib/baseball/adapters";
+import { fetchBaseballStadiums } from "@/lib/baseball/client";
+import type { Stadium } from "@/lib/stadiums";
 import { routeContentToText, type RouteContentFormat } from "@/lib/route-content";
 import { useChat } from "@/components/chat-provider";
 import { saveRoute, useRoutes, type RouteStop, type TripRoute } from "@/lib/routes";
@@ -45,22 +47,40 @@ type WriterDraft = {
 // Client navigation can unmount the writer while the user asks the chatbot for help.
 // Keep unfinished work in memory only; saving or explicitly discarding removes it.
 const writerDrafts = new Map<string, WriterDraft>();
+const stadiumKey = (value: string) => value.replace(/\s/g, "").toUpperCase();
+const matchesStadium = (stadium: Stadium, value: string) => stadium.code === stadiumKey(value) || stadiumKey(stadium.name) === stadiumKey(value);
 
 export default function RouteWriter({ editId, copyId, initialStadium }: { editId?: string; copyId?: string; initialStadium?: string }) {
   const routes = useRoutes();
+  const [stadiums, setStadiums] = useState<Stadium[] | null>(null);
+  const [stadiumError, setStadiumError] = useState("");
+  const [invalidCount, setInvalidCount] = useState(0);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchBaseballStadiums(controller.signal).then(page => {
+      const available = page.results.map(adaptStadium).filter((item): item is Stadium => item !== null);
+      setStadiums(available); setInvalidCount(page.results.length - available.length);
+    }).catch(cause => { if (!controller.signal.aborted) setStadiumError(cause instanceof Error ? cause.message : "구장 목록을 불러오지 못했어요."); });
+    return () => controller.abort();
+  }, [attempt]);
   const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   const sourceId = copyId ?? editId;
   const existing = sourceId ? routes.find((route) => route.id === sourceId) : undefined;
   if (sourceId && !hydrated) return <main className="container writer-empty"><p role="status"><span className="writer-spinner" aria-hidden="true" />저장된 루트를 불러오고 있어요.</p></main>;
   if (sourceId && !existing) return <main className="container writer-empty"><span className="eyebrow">MY ROUTE</span><h1>저장된 루트를 찾을 수 없어요</h1><p>이 기기에 저장된 루트인지 확인하거나 새로운 루트를 만들어보세요.</p><Link href="/routes" className="button button-secondary">루트 목록으로</Link></main>;
-  return <WriterForm key={`${copyId ? "copy:" : "edit:"}${existing?.id ?? initialStadium ?? "new"}`} copying={Boolean(copyId)} existing={existing} initialStadium={initialStadium} />;
+  if (stadiumError) return <main className="container writer-empty" role="alert"><h1>구장 목록을 불러오지 못했어요</h1><p>{stadiumError} 작성 중이던 기기 내 초안은 지우지 않았어요.</p><button type="button" onClick={() => { setStadiums(null); setStadiumError(""); setAttempt(value => value + 1); }}>다시 시도</button></main>;
+  if (!stadiums) return <main className="container writer-empty"><p role="status"><span className="writer-spinner" aria-hidden="true" />DB에서 구장 목록을 불러오고 있어요.</p></main>;
+  if (!stadiums.length) return <main className="container writer-empty"><h1>선택할 수 있는 구장이 없어요</h1><p>{invalidCount ? "적재된 구장 좌표를 확인해 주세요." : "구장 데이터가 적재된 뒤 다시 시도해 주세요."} 기존 초안은 유지됩니다.</p></main>;
+  const requested = existing?.stadium ?? initialStadium;
+  const initial = requested ? stadiums.find(item => matchesStadium(item, requested)) : stadiums.at(0);
+  if (!initial) return <main className="container writer-empty"><h1>선택한 구장을 사용할 수 없어요</h1><p>구장이 삭제됐거나 좌표를 확인할 수 없어요. 다른 구장을 직접 선택해 주세요. 기존 초안은 유지했습니다.</p><Link href="/routes/new" className="button button-secondary">구장 다시 선택하기</Link></main>;
+  return <WriterForm key={`${copyId ? "copy:" : "edit:"}${existing?.id ?? initial.code}`} stadiums={stadiums} initial={initial} copying={Boolean(copyId)} existing={existing} />;
 }
 
-function WriterForm({ existing, copying = false, initialStadium }: { existing?: TripRoute; copying?: boolean; initialStadium?: string }) {
+function WriterForm({ stadiums, initial, existing, copying = false }: { stadiums: Stadium[]; initial: Stadium; existing?: TripRoute; copying?: boolean }) {
   const router = useRouter();
   const { onContextChange } = useChat();
-  const requested = (existing?.stadium ?? initialStadium ?? "").replace(/\s/g, "").toUpperCase();
-  const initial = stadiums.find((stadium) => stadium.code === requested || (requested && stadium.name.replace(/\s/g, "").toUpperCase().includes(requested))) ?? stadiums[0];
   const draftKey = existing ? `${copying ? "copy" : "edit"}:${existing.id}` : `new:${initial.code}`;
   const [restoredDraft] = useState(() => copying ? undefined : writerDrafts.get(draftKey));
   const [stadiumCode, setStadiumCode] = useState(restoredDraft?.stadiumCode ?? initial.code);
@@ -80,7 +100,7 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
   const savedRouteRef = useRef<TripRoute | undefined>(existing && !copying && !existing.isSample ? existing : undefined);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  const current = stadiums.find((stadium) => stadium.code === stadiumCode)!;
+  const current = stadiums.find((stadium) => stadium.code === stadiumCode);
   const plainContent = routeContentToText(content, contentFormat);
   const canSave = Boolean(title.trim() && plainContent.length <= 12000 && stops.length);
   useEffect(() => {
@@ -91,8 +111,8 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
   }, [draftKey, stadiumCode, title, content, contentFormat, duration, tags, stops, start, tab]);
 
   useEffect(() => {
-    onContextChange({ stadium: current.name, intent: "route" });
-  }, [current.name, onContextChange]);
+    if (current) onContextChange({ stadium: current.name, intent: "route" });
+  }, [current, onContextChange]);
 
   useEffect(() => {
     const protect = (event: BeforeUnloadEvent) => { if (dirty.current) event.preventDefault(); };
@@ -121,6 +141,8 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
 
   const markDirty = useCallback(() => { dirty.current = true; setError(""); }, []);
   const changeStops = useCallback((next: RouteStop[]) => { setStops(next); markDirty(); }, [markDirty]);
+  if (!current) return <main className="container writer-empty"><h1>초안의 구장을 사용할 수 없어요</h1><p>구장이 삭제됐거나 좌표를 확인할 수 없어요. 초안은 지우지 않았습니다.</p><Link href="/routes/new" className="button button-secondary">새 루트에서 구장 선택하기</Link></main>;
+  const selectedStadium = current;
   function changeStadium(code: string) {
     if (code === stadiumCode) return;
     const change = () => { setStadiumCode(code); setStops([]); setStart(undefined); markDirty(); };
@@ -145,7 +167,7 @@ function WriterForm({ existing, copying = false, initialStadium }: { existing?: 
     const saved = savedRouteRef.current;
     const id = saved?.id ?? `local-${crypto.randomUUID()}`;
     const route: TripRoute = {
-      id, title: title.trim(), stadium: current.name, description: (plainContent.trim() || withCourseStart(stops, start).map((stop) => stop.name).join(" → ")).replace(/\s+/g, " ").slice(0, 100),
+      id, title: title.trim(), stadium: selectedStadium.name, description: (plainContent.trim() || withCourseStart(stops, start).map((stop) => stop.name).join(" → ")).replace(/\s+/g, " ").slice(0, 100),
       content: content.trim(), ...(contentFormat ? { contentFormat } : {}), tags, duration, cover: existing?.cover ?? "/images/stadium-night.jpg", stops, ...(start ? { start } : {}),
       author: "나의 코스", likes: saved?.likes ?? 0, views: saved?.views ?? 0,
       isSample: false, createdAt: saved?.createdAt ?? new Date().toISOString(),
