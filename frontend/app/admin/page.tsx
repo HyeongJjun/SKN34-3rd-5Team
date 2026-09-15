@@ -49,7 +49,7 @@ export default function AdminPage() {
   }
   return <main className={`container ${styles.page}`}>
     <p className="eyebrow">ADMIN</p><h1>회원 관리</h1>
-    <p className={styles.intro}>회원 정보를 확인하고 운영 관리자 권한을 관리하세요.</p>
+    <p className={styles.intro}>회원 정보를 확인하고 운영 관리자 권한을 관리하세요. <Link href="/admin/baseball">야구 데이터 관리 →</Link></p>
     {loading && <p role="status">관리자 권한을 확인하고 있어요.</p>}
     {error && <div className={styles.feedback} role="alert"><p>{error}</p><Link href="/login?next=admin">관리자 계정으로 로그인</Link><button type="button" onClick={() => setReload(value => value + 1)}>다시 확인</button></div>}
     {notice && <p role="status" className={styles.feedback}>{notice}</p>}
