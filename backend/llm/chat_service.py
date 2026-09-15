@@ -17,7 +17,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 class ChatService:
     def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-5.4-mini", timeout=30, max_retries=0)
+        self.llm = ChatOpenAI(model="gpt-5.6-luna", temperature=0, timeout=30, max_retries=0, reasoning_effort="none")
         self.chain = self.get_chain()
 
     @staticmethod
