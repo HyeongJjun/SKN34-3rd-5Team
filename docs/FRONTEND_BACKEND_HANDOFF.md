@@ -1,5 +1,13 @@
 # 프론트엔드 → 백엔드 연동 인계서
 
+## 2026-09-15 장소 검색 백엔드 계약
+
+- 외부 경로는 `POST /api/places/search/`, Nginx가 `/api/`를 제거한 Django 경로는 `/places/search/`다.
+- 요청은 기존 장소 검색 필드 `method`, `keyword?`, `category?`, `lat`, `lng`, `radius?`, `page`, `size`, `sort`만 보내며 기존 Next `action: "places"`는 보내지 않는다.
+- 응답은 기존 `{ places, hasNextPage }`와 카카오 장소 ID 및 문자열 `x/y`를 유지하고 `syncedAt`을 추가한다. `syncedAt`은 공급자 조회 성공 시각이며 모든 DB 행의 저장 시각을 뜻하지 않는다. 오류는 `{ "error": "안전한 사용자 메시지" }`다.
+- 브라우저에서 카카오 REST 키를 보내거나 Next `/directions-api`를 장소 검색 릴레이로 사용하지 않는다. 지도 JavaScript SDK와 길찾기/TourAPI 경로는 별도 계약으로 유지한다.
+- 공개 API는 장소 검색·목록·상세이고, POST/PATCH/DELETE CRUD는 기존 JWT의 활성 staff 관리자만 허용한다. 자세한 내부 함수 계약은 `docs/PLACE_TOOLS_HANDOFF.md`를 따른다.
+
 작성 기준: 2026-09-10, `feat/front` 브랜치
 
 이 문서는 현재 프론트엔드 프로토타입을 Django·PostgreSQL 백엔드와 연결할 때 필요한 계약과 작업 순서를 정리한다. 화면 디자인과 사용자 흐름은 구현되어 있지만 회원, 게시글, 좋아요, 조회 수, 커뮤니티는 아직 실제 서버에 저장되지 않는다.
@@ -438,7 +446,8 @@ frontend/.cache/kbo/details.json
 | `KBO_COLLECTOR_ENABLED` | Next 서버 | 비공개 설정 |
 | `NEXT_PUBLIC_KAKAO_MAP_KEY` | 브라우저 | 공개되는 키, 도메인 제한 필요 |
 | `NEXT_PUBLIC_CKEDITOR_LICENSE_KEY` | 브라우저 | 번들에 포함됨, 라이선스 정책 확인 |
-| `KAKAO_REST_API_KEY` | 백엔드 수집기 | 비밀 |
+| `KAKAO_REST_API_KEY` | Django 장소 검색·Next 길찾기 | 비밀 |
+| `EXTERNAL_DATA_SYNC_INTERVAL_SECONDS` | Django 외부 데이터 DB 재기록 간격(기본 600초) | 비공개 설정 |
 | `DJANGO_SECRET_KEY` | Django | 비밀 |
 | `DATABASE_URL` 또는 `DB_*` | Django | 비밀 |
 | `ALLOWED_HOSTS` | Django | 환경별 설정 |

@@ -69,6 +69,30 @@ class CourseStop(models.Model):
         )
 
 
+class Place(models.Model):
+    kakao_place_id = models.CharField(max_length=100, null=True, blank=True, unique=True)
+    name = models.CharField(max_length=255)
+    address = models.CharField(max_length=500, blank=True)
+    road_address = models.CharField(max_length=500, blank=True)
+    category_group_code = models.CharField(max_length=20, blank=True)
+    category_group_name = models.CharField(max_length=100, blank=True)
+    category_name = models.CharField(max_length=255, blank=True)
+    phone = models.CharField(max_length=50, blank=True)
+    lat = models.FloatField()
+    lng = models.FloatField()
+    url = models.URLField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("id",)
+        constraints = (
+            models.CheckConstraint(condition=Q(lat__range=(-90, 90)), name="place_lat_bounds"),
+            models.CheckConstraint(condition=Q(lng__range=(-180, 180)), name="place_lng_bounds"),
+        )
+
+
 class CourseReaction(models.Model):
     course = models.ForeignKey(Course, related_name="reactions", on_delete=models.CASCADE)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="course_reactions", on_delete=models.CASCADE)
