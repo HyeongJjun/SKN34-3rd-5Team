@@ -1234,6 +1234,86 @@ export interface paths {
         patch: operations["community_comments_partial_update"];
         trace?: never;
     };
+    "/api/community/drafts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["community_drafts_list"];
+        put?: never;
+        post: operations["community_drafts_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/community/drafts/{draft_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["community_drafts_retrieve"];
+        put?: never;
+        post?: never;
+        delete: operations["community_drafts_destroy"];
+        options?: never;
+        head?: never;
+        patch: operations["community_drafts_partial_update"];
+        trace?: never;
+    };
+    "/api/community/drafts/{draft_id}/publish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["community_drafts_publish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/community/images/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["community_images_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/community/images/{image_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["community_images_retrieve"];
+        put?: never;
+        post?: never;
+        delete: operations["community_images_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/community/posts/": {
         parameters: {
             query?: never;
@@ -1691,6 +1771,14 @@ export interface components {
         CommunityCommentWrite: {
             content: string;
         };
+        CommunityImageMetadata: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly contentType: string;
+            readonly size: number;
+            readonly width: number;
+            readonly height: number;
+        };
         CommunityPost: {
             readonly id: string;
             readonly sourceId: string;
@@ -1709,6 +1797,14 @@ export interface components {
             readonly downvotes: number;
             readonly commentCount: number;
             readonly isSample: boolean;
+            readonly images: components["schemas"]["CommunityImageMetadata"][];
+        };
+        CommunityPostListResponse: components["schemas"]["CommunityPost"][] | components["schemas"]["CommunityPostPage"];
+        CommunityPostPage: {
+            count: number;
+            next: string | null;
+            previous: string | null;
+            results: components["schemas"]["CommunityPost"][];
         };
         CommunityPostWrite: {
             board: components["schemas"]["BoardEnum"];
@@ -1744,6 +1840,13 @@ export interface components {
          * @enum {string}
          */
         ContentFormatEnum: "html";
+        /**
+         * @description * `image/jpeg` - image/jpeg
+         *     * `image/png` - image/png
+         *     * `image/webp` - image/webp
+         * @enum {string}
+         */
+        ContentTypeEnum: "image/jpeg" | "image/png" | "image/webp";
         Course: {
             /** Format: uuid */
             id: string;
@@ -1851,6 +1954,55 @@ export interface components {
         };
         CourseViewResult: {
             views: number;
+        };
+        /** DraftInput */
+        DraftInput: {
+            /** Board */
+            board: components["schemas"]["BoardEnum"];
+            /**
+             * Teamcode
+             * @default
+             */
+            teamCode: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+        };
+        DraftOutputSchema: {
+            /** Format: uuid */
+            id: string;
+            board: components["schemas"]["BoardEnum"];
+            teamCode: string;
+            category: string;
+            title: string;
+            content: string;
+            revision: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            imageIds: string[];
+        };
+        DraftPageSchema: {
+            count: number;
+            next: string | null;
+            previous: string | null;
+            results: components["schemas"]["DraftOutputSchema"][];
+        };
+        DraftPublishSchema: {
+            revision: number;
         };
         EmailChangeRequestResponse: {
             /** Format: uuid */
@@ -2026,6 +2178,21 @@ export interface components {
             stadium_id: number;
             /** etag */
             readonly _etag: string;
+        };
+        ImageUploadRequest: {
+            /** Format: uri */
+            image: string;
+        };
+        ImageUploadResponse: {
+            /** Format: uuid */
+            id: string;
+            contentType: components["schemas"]["ContentTypeEnum"];
+            size: number;
+            width: number;
+            height: number;
+            /** Format: date-time */
+            createdAt: string;
+            url: string;
         };
         KakaoPlace: {
             id: string;
@@ -2501,6 +2668,15 @@ export interface components {
             /** Format: double */
             startLng?: number | null;
             stops?: components["schemas"]["CourseStopWrite"][];
+        };
+        PatchedDraftPatchSchema: {
+            revision?: number;
+            board?: components["schemas"]["BoardEnum"];
+            teamCode?: string;
+            category?: string;
+            title?: string;
+            content?: string;
+            imageIds?: string[];
         };
         PatchedFacility: {
             id?: number;
@@ -8344,13 +8520,9 @@ export interface operations {
             };
         };
     };
-    community_posts_list: {
+    community_drafts_list: {
         parameters: {
-            query?: {
-                board?: "free" | "teams";
-                mine?: "1";
-                team?: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -8362,7 +8534,42 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CommunityPost"][];
+                    "application/json": components["schemas"]["DraftPageSchema"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    community_drafts_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftInput"];
+                "application/x-www-form-urlencoded": components["schemas"]["DraftInput"];
+                "multipart/form-data": components["schemas"]["DraftInput"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOutputSchema"];
                 };
             };
             400: {
@@ -8376,6 +8583,473 @@ export interface operations {
                 };
             };
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    community_drafts_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOutputSchema"];
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    community_drafts_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 본문 없음 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    community_drafts_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedDraftPatchSchema"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedDraftPatchSchema"];
+                "multipart/form-data": components["schemas"]["PatchedDraftPatchSchema"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOutputSchema"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    community_drafts_publish_create: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftPublishSchema"];
+                "application/x-www-form-urlencoded": components["schemas"]["DraftPublishSchema"];
+                "multipart/form-data": components["schemas"]["DraftPublishSchema"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityPost"];
+                };
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityPost"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    community_images_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ImageUploadRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageUploadResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            411: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    community_images_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 원본 비공개 저장소에서 스트리밍한 이미지 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    community_images_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 본문 없음 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    community_posts_list: {
+        parameters: {
+            query?: {
+                board?: "free" | "teams";
+                mine?: "1";
+                page?: number;
+                page_size?: number;
+                q?: string;
+                search_field?: "all" | "author" | "title";
+                team?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommunityPostListResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
