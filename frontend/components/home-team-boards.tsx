@@ -29,7 +29,7 @@ export function HomeTeamBoards({ standings, loading, retry }: {
         <div><span className="eyebrow">FAN COMMUNITY</span><h2 id="home-community-heading">팀 게시판</h2><p>같은 팀을 응원하는 우리, 야구 이야기를 나눠요.</p></div>
         <Link href={getTeamBoardHref()} className="text-link">게시판 이동 <Icon name="chevron" size={17} /></Link>
       </div>
-      <div className="home-community-meta"><span>예시 게시글</span><p>위 순위표 순서로 만나는 팀별 이야기</p></div>
+      <div className="home-community-meta"><span>최신 게시글</span><p>위 순위표 순서로 만나는 팀별 이야기</p></div>
       {community.error && community.posts.length > 0 && <p role="alert">{community.error} <button type="button" className="text-link" onClick={() => void retryCommunityPosts()}>다시 확인</button></p>}
       {loading || community.loading && community.posts.length === 0 ? (
         <div className="home-community-grid home-community-loading" role="status">
