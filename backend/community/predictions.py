@@ -4,12 +4,14 @@ from zoneinfo import ZoneInfo
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .models import GamePrediction, PredictionGame, TEAM_CODES
 from .prediction_source import LOCKED_STATUSES, PredictionSourceError, sync_prediction_games
+from .serializers import PredictionChoiceWriteSerializer, PredictionGameSerializer
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -53,10 +55,10 @@ def _serialize(game, user=None, force_stale=False):
     my_choice = None
     if user and user.is_authenticated:
         my_choice = game.predictions.filter(user=user).values_list("choice", flat=True).first()
-    return {
+    return PredictionGameSerializer({
         "gameId": game.source_id,
-        "date": game.game_date.isoformat(),
-        "startsAt": game.starts_at.isoformat() if game.starts_at else None,
+        "date": game.game_date,
+        "startsAt": game.starts_at,
         "stadium": game.stadium,
         "away": {"code": game.away_team_code, "name": game.away_team_name, "score": game.away_score},
         "home": {"code": game.home_team_code, "name": game.home_team_name, "score": game.home_score},
@@ -65,10 +67,10 @@ def _serialize(game, user=None, force_stale=False):
         "locked": game.locked_at is not None,
         "voided": game.voided_at is not None,
         "stale": force_stale or _is_stale(game),
-        "sourceFetchedAt": game.source_fetched_at.isoformat(),
+        "sourceFetchedAt": game.source_fetched_at,
         "votes": _counts(game),
         "myChoice": my_choice,
-    }
+    }).data
 
 
 def _no_store(data, status=200):
@@ -87,6 +89,10 @@ def _refresh_current(requested_date):
         return str(error)
 
 
+@extend_schema(
+    parameters=[OpenApiParameter("date", OpenApiTypes.DATE), OpenApiParameter("team", OpenApiTypes.STR)],
+    responses={200: PredictionGameSerializer(many=True), 400: OpenApiTypes.OBJECT, 503: OpenApiTypes.OBJECT},
+)
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def prediction_game_list(request):
@@ -108,6 +114,7 @@ def prediction_game_list(request):
     return _no_store([_serialize(game, request.user, bool(source_error)) for game in games])
 
 
+@extend_schema(responses={200: PredictionGameSerializer, 404: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def prediction_game_detail(request, game_id):
@@ -120,12 +127,19 @@ def prediction_game_detail(request, game_id):
     return _no_store(_serialize(game, request.user, bool(source_error)))
 
 
+@extend_schema(
+    request=PredictionChoiceWriteSerializer,
+    responses={200: PredictionGameSerializer, 400: OpenApiTypes.OBJECT, 401: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT, 409: OpenApiTypes.OBJECT, 503: OpenApiTypes.OBJECT},
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def prediction_game_vote(request, game_id):
     choice = request.data.get("choice") if isinstance(request.data, dict) else object()
     if not isinstance(request.data, dict) or set(request.data) != {"choice"} or choice is not None and choice not in ("home", "away"):
         return _no_store({"detail": "choice는 home, away 또는 null이어야 합니다."}, 400)
+    serializer = PredictionChoiceWriteSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    choice = serializer.validated_data["choice"]
     try:
         sync_prediction_games()
     except PredictionSourceError as error:

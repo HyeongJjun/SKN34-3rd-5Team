@@ -1,15 +1,38 @@
+from hashlib import sha256
+from uuid import UUID
+
 import secrets
 
 from django.contrib.auth.hashers import check_password, make_password
+from django.db import transaction
+from django.db.models import F
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema, extend_schema_view
 from rest_framework import generics, status
 from rest_framework.exceptions import APIException, PermissionDenied
 from rest_framework.parsers import JSONParser
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.views import APIView
 
-from .models import Course
-from .serializers import CourseSerializer
+from .models import Course, CourseReaction, CourseView
+from .serializers import (
+    CourseCreateRequestSerializer,
+    CourseCreateResultSerializer,
+    CoursePatchRequestSerializer,
+    CourseReactionRequestSerializer,
+    CourseReactionSerializer,
+    CourseResponseSerializer,
+    CourseSerializer,
+    CourseViewResultSerializer,
+)
+
+
+EDIT_TOKEN_HEADER = OpenApiParameter(
+    "X-Course-Edit-Token", OpenApiTypes.STR, OpenApiParameter.HEADER,
+    required=True, description="코스 생성 응답에서 한 번만 반환되는 익명 편집 토큰",
+)
 
 
 class CoursePayloadTooLarge(APIException):
@@ -40,6 +63,14 @@ class CourseWriteThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
 
 
+@extend_schema_view(
+    get=extend_schema(responses={200: CourseResponseSerializer(many=True)}, auth=[]),
+    post=extend_schema(
+        request=CourseCreateRequestSerializer,
+        responses={201: CourseCreateResultSerializer, 400: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 413: OpenApiTypes.OBJECT, 429: OpenApiTypes.OBJECT},
+        auth=[],
+    ),
+)
 class CourseListCreateView(CourseWriteProtectionMixin, generics.ListCreateAPIView):
     queryset = Course.objects.prefetch_related("stops")
     serializer_class = CourseSerializer
@@ -58,6 +89,18 @@ class CourseListCreateView(CourseWriteProtectionMixin, generics.ListCreateAPIVie
         return Response(data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema_view(
+    get=extend_schema(responses={200: CourseResponseSerializer, 404: OpenApiTypes.OBJECT}, auth=[]),
+    patch=extend_schema(
+        request=CoursePatchRequestSerializer,
+        responses={200: CourseResponseSerializer, 400: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT, 413: OpenApiTypes.OBJECT, 429: OpenApiTypes.OBJECT},
+        parameters=[EDIT_TOKEN_HEADER], auth=[],
+    ),
+    delete=extend_schema(
+        responses={204: OpenApiResponse(description="본문 없음"), 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT, 413: OpenApiTypes.OBJECT, 429: OpenApiTypes.OBJECT},
+        parameters=[EDIT_TOKEN_HEADER], auth=[],
+    ),
+)
 class CourseDetailView(CourseWriteProtectionMixin, generics.RetrieveUpdateDestroyAPIView):
     queryset = Course.objects.prefetch_related("stops")
     serializer_class = CourseSerializer
@@ -79,3 +122,64 @@ class CourseDetailView(CourseWriteProtectionMixin, generics.RetrieveUpdateDestro
     def destroy(self, request, *args, **kwargs):
         self.check_edit_token(self.get_object())
         return super().destroy(request, *args, **kwargs)
+
+
+class CourseReactionView(CourseWriteProtectionMixin, APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get_throttles(self):
+        return [CourseWriteThrottle()] if self.request.method == "POST" else []
+
+    @extend_schema(responses={200: CourseReactionSerializer, 401: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
+    def get(self, request, pk):
+        course = get_object_or_404(Course, pk=pk)
+        liked = CourseReaction.objects.filter(course=course, user=request.user).exists()
+        return Response(CourseReactionSerializer({"liked": liked, "likes": course.likes}).data)
+
+    @extend_schema(
+        request=CourseReactionRequestSerializer,
+        responses={200: CourseReactionSerializer, 400: OpenApiTypes.OBJECT, 401: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT, 413: OpenApiTypes.OBJECT, 429: OpenApiTypes.OBJECT},
+        description="JWT 회원 단위로 원하는 좋아요 상태를 멱등 적용합니다.",
+    )
+    @transaction.atomic
+    def post(self, request, pk):
+        serializer = CourseReactionRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        desired = serializer.validated_data["liked"]
+        course = get_object_or_404(Course.objects.select_for_update(), pk=pk)
+        reaction = CourseReaction.objects.filter(course=course, user=request.user).first()
+        if desired and not reaction:
+            CourseReaction.objects.create(course=course, user=request.user)
+            Course.objects.filter(pk=course.pk).update(likes=F("likes") + 1)
+        elif not desired and reaction:
+            reaction.delete()
+            Course.objects.filter(pk=course.pk).update(likes=F("likes") - 1)
+        course.refresh_from_db(fields=("likes",))
+        data = CourseReactionSerializer({"liked": desired, "likes": course.likes}).data
+        return Response(data)
+
+
+class CourseViewView(CourseWriteProtectionMixin, APIView):
+    permission_classes = (AllowAny,)
+    throttle_classes = (CourseWriteThrottle,)
+
+    @extend_schema(
+        request=None,
+        responses={200: CourseViewResultSerializer, 400: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT, 413: OpenApiTypes.OBJECT, 429: OpenApiTypes.OBJECT},
+        parameters=[OpenApiParameter("X-Course-View-Token", OpenApiTypes.UUID, OpenApiParameter.HEADER, required=True)],
+        auth=[], description="익명 브라우저가 보낸 UUID capability마다 코스 조회를 한 번만 집계합니다. 이는 사람이나 계정 식별자가 아닙니다.",
+    )
+    @transaction.atomic
+    def post(self, request, pk):
+        token = request.headers.get("X-Course-View-Token", "")
+        try:
+            token = str(UUID(token))
+        except (ValueError, AttributeError):
+            return Response({"detail": "올바른 조회 토큰이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+        course = get_object_or_404(Course.objects.select_for_update(), pk=pk)
+        _, created = CourseView.objects.get_or_create(course=course, actor_digest=sha256(token.encode()).hexdigest())
+        if created:
+            Course.objects.filter(pk=course.pk).update(views=F("views") + 1)
+        course.refresh_from_db(fields=("views",))
+        data = CourseViewResultSerializer({"views": course.views}).data
+        return Response(data)

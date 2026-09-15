@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useSyncExternalStore } from "react";
 import { MEMBER_PREVIEW_ENABLED } from "./member-preview";
+import { createClientId } from "./client-id";
 
 export type NotificationKind = "comments" | "courses" | "announcements";
 export type MemberNotice = { id: string; text: string; kind: NotificationKind; read: boolean; createdAt: string };
@@ -44,7 +45,7 @@ export function saveMemberSettings(settings: Omit<MemberSettings, "notices">) {
 export function addMemberNotice(kind: NotificationKind, text: string) {
   const state = parse(read());
   if (!state.notifications[kind]) return;
-  write({ ...state, notices: [{ id: crypto.randomUUID(), text, kind, read: false, createdAt: new Date().toISOString() }, ...state.notices].slice(0, 100) });
+  write({ ...state, notices: [{ id: createClientId(), text, kind, read: false, createdAt: new Date().toISOString() }, ...state.notices].slice(0, 100) });
 }
 export function markNoticesRead(id?: string) {
   const state = parse(read());

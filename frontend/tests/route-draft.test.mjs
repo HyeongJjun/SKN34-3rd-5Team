@@ -10,7 +10,7 @@ import ts from "typescript";
 const frontend = dirname(dirname(fileURLToPath(import.meta.url)));
 const scratch = mkdtempSync(join(tmpdir(), "kbo-route-draft-test-"));
 after(() => rmSync(scratch, { recursive: true }));
-for (const name of ["route-draft", "stadiums"]) {
+for (const name of ["client-id", "route-draft", "stadiums"]) {
   const source = readFileSync(join(frontend, "lib", `${name}.ts`), "utf8");
   const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } });
   writeFileSync(join(scratch, `${name}.js`), outputText);

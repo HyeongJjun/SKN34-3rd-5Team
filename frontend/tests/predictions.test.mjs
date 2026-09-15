@@ -10,8 +10,14 @@ let memberCalls = [];
 const testModule = { exports: {} };
 const memberError = (value, fallback) => typeof value?.detail === "string" ? value.detail : fallback;
 const memberFetch = async (path, init) => { memberCalls.push([path, init]); return Response.json(game); };
+const readApiResponse = async (response, fallback) => {
+  const value = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(value?.detail ?? fallback);
+  return value;
+};
 new Function("module", "exports", "require", outputText)(testModule, testModule.exports, name => {
   if (name === "./member-auth-request") return { memberError, memberFetch };
+  if (name === "./api/client") return { readApiResponse };
   throw new Error(`Unexpected import: ${name}`);
 });
 const { fetchPredictionGame, fetchPredictionGames, setPredictionVote } = testModule.exports;

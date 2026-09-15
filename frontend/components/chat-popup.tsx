@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import Link from "next/link";
+import { type ReactNode, useEffect, useRef } from "react";
 import { MAX_MESSAGE_LENGTH } from "@/lib/chat/types";
 import { ChatAnswer } from "./chat-answer";
 import { useChat } from "./chat-provider";
@@ -13,7 +14,23 @@ const SUGGESTIONS = [
   { icon: "book", label: "쉬운 야구 규칙", text: "야구를 처음 보는 사람에게 기본 규칙을 쉽게 알려 주세요.", intent: "baseball" },
 ] as const;
 
-export function ChatPopup({ embedded = false, title = "직관 도우미" }: { embedded?: boolean; title?: string }) {
+type ChatPopupProps = {
+  embedded?: boolean;
+  title?: string;
+  conversationLabel?: string | null;
+  welcomeTitle?: string;
+  welcomeDescription?: ReactNode | null;
+  welcomeLink?: { href: string; label: string };
+};
+
+export function ChatPopup({
+  embedded = false,
+  title = "직관 도우미",
+  conversationLabel = "나의 직관 이야기",
+  welcomeTitle = "어떤 직관을 준비하고 있나요?",
+  welcomeDescription = <>직관 코스부터 구장 정보, 야구 이야기까지.<br />궁금한 것을 편하게 물어보세요.</>,
+  welcomeLink,
+}: ChatPopupProps) {
   const chat = useChat();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -76,16 +93,16 @@ export function ChatPopup({ embedded = false, title = "직관 도우미" }: { em
       </header>
 
       <div className="chat-popup-toolbar">
-        {chat.conversations.length > 1 ? <><label className="sr-only" htmlFor={conversationId}>대화 선택</label><select id={conversationId} value={chat.activeConversationId} disabled={busy || chat.uncertain} onChange={event => chat.onSelectConversation(event.target.value)}>{chat.conversations.map(conversation => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></> : <span>나의 직관 이야기</span>}
+        {chat.conversations.length > 1 ? <><label className="sr-only" htmlFor={conversationId}>대화 선택</label><select id={conversationId} value={chat.activeConversationId} disabled={busy || chat.uncertain} onChange={event => chat.onSelectConversation(event.target.value)}>{chat.conversations.map(conversation => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></> : conversationLabel ? <span>{conversationLabel}</span> : null}
         <button type="button" className="chat-popup-new" disabled={busy || chat.uncertain} onClick={() => { chat.onReset(); nearBottomRef.current = true; inputRef.current?.focus(); }}><span aria-hidden="true">+</span>새 대화</button>
       </div>
 
       <div ref={scrollRef} className={`chat-popup-transcript${empty ? " is-empty" : ""}`} onScroll={event => { const element = event.currentTarget; nearBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}>
         {empty && <div className="chat-popup-welcome">
           <span className="chat-popup-welcome-mark"><Icon name="sparkles" size={24} /></span>
-          <h3>어떤 직관을 준비하고 있나요?</h3>
-          <p>직관 코스부터 구장 정보, 야구 이야기까지.<br />궁금한 것을 편하게 물어보세요.</p>
-          <div className="chat-popup-suggestions">{SUGGESTIONS.map(item => <button key={item.intent} type="button" onClick={() => { chat.onSuggestion(item.intent === "route" && chat.context?.stadium ? `${chat.context.stadium}에서 첫 직관을 해요. 경기 전후 코스를 추천해 주세요.` : item.text, item.intent); inputRef.current?.focus(); }}><Icon name={item.icon} size={17} />{item.label}</button>)}</div>
+          <h3>{welcomeTitle}</h3>
+          {welcomeDescription && <p>{welcomeDescription}</p>}
+          <div className="chat-popup-suggestions">{welcomeLink ? <Link href={welcomeLink.href}><Icon name="route" size={17} />{welcomeLink.label}</Link> : SUGGESTIONS.map(item => <button key={item.intent} type="button" onClick={() => { chat.onSuggestion(item.intent === "route" && chat.context?.stadium ? `${chat.context.stadium}에서 첫 직관을 해요. 경기 전후 코스를 추천해 주세요.` : item.text, item.intent); inputRef.current?.focus(); }}><Icon name={item.icon} size={17} />{item.label}</button>)}</div>
         </div>}
         {chat.context?.stadium && <p className="chat-popup-context"><Icon name="pin" size={13} />{chat.context.stadium}에서의 하루</p>}
         <div className="chat-popup-messages" role="log" aria-label="직관 도우미 대화 내용" aria-live="polite" aria-relevant="additions">

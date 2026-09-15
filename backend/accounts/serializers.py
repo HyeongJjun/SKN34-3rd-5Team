@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 from rest_framework.validators import UniqueValidator
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
@@ -20,6 +21,28 @@ class PasswordAwareTokenRefreshSerializer(TokenRefreshSerializer):
     def validate(self, attrs):
         JWTAuthentication().get_user(self.token_class(attrs["refresh"]))
         return super().validate(attrs)
+
+
+class SignInRequestSerializer(serializers.Serializer):
+    username = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+
+
+class TokenPairSerializer(serializers.Serializer):
+    access = serializers.CharField(read_only=True)
+    refresh = serializers.CharField(read_only=True)
+
+
+class TokenRefreshRequestSerializer(serializers.Serializer):
+    refresh = serializers.CharField(write_only=True)
+
+
+class TokenRefreshResponseSerializer(serializers.Serializer):
+    access = serializers.CharField(read_only=True)
+
+
+class LogoutRequestSerializer(serializers.Serializer):
+    refresh = serializers.CharField(write_only=True)
 
 
 class PasswordValidationMixin:
@@ -50,7 +73,7 @@ class SignupSerializer(PasswordValidationMixin, serializers.ModelSerializer):
     email = serializers.EmailField(required=True, max_length=254)
     first_name = serializers.CharField(required=True, allow_blank=False, max_length=150)
     birth_date = serializers.DateField(required=True)
-    gender = serializers.ChoiceField(choices=("M", "F"), required=True)
+    gender = serializers.ChoiceField(choices=User._meta.get_field("gender").choices, required=True)
     re_password = serializers.CharField(write_only=True, trim_whitespace=False)
 
     class Meta:
@@ -99,7 +122,32 @@ def _boolean_settings(value, defaults):
     return value
 
 
-class UserSerializer(serializers.ModelSerializer):
+class NotificationSettingsSerializer(serializers.Serializer):
+    comments = serializers.BooleanField()
+    courses = serializers.BooleanField()
+    announcements = serializers.BooleanField()
+
+
+class VisibilitySettingsSerializer(serializers.Serializer):
+    courses = serializers.BooleanField()
+    posts = serializers.BooleanField()
+    likes = serializers.BooleanField()
+
+
+@extend_schema_field(NotificationSettingsSerializer)
+class NotificationSettingsField(serializers.JSONField):
+    pass
+
+
+@extend_schema_field(VisibilitySettingsSerializer)
+class VisibilitySettingsField(serializers.JSONField):
+    pass
+
+
+class MemberUserUpdateSerializer(serializers.ModelSerializer):
+    notifications = NotificationSettingsField(required=False)
+    visibility = VisibilitySettingsField(required=False)
+
     class Meta:
         model = User
         fields = ("id", "username", "email", "first_name", "birth_date", "gender", "is_staff", "is_superuser", "is_active", "nickname", "team_code", "avatar", "nickname_changed_at", "notifications", "visibility")
@@ -153,6 +201,27 @@ class UserSerializer(serializers.ModelSerializer):
         data["notifications"] = {**DEFAULT_NOTIFICATIONS, **(instance.notifications or {})}
         data["visibility"] = {**DEFAULT_VISIBILITY, **(instance.visibility or {})}
         return data
+
+
+class MemberUserSerializer(MemberUserUpdateSerializer):
+    notifications = NotificationSettingsField(read_only=True)
+    visibility = VisibilitySettingsField(read_only=True)
+
+    class Meta(MemberUserUpdateSerializer.Meta):
+        read_only_fields = MemberUserUpdateSerializer.Meta.fields
+
+
+class PasswordUpdateRequestSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True, required=False, max_length=128, trim_whitespace=False)
+    new_password = serializers.CharField(write_only=True, required=False, max_length=128, trim_whitespace=False)
+    new_password_confirm = serializers.CharField(write_only=True, required=False, max_length=128, trim_whitespace=False)
+    uid = serializers.CharField(write_only=True, required=False)
+    token = serializers.CharField(write_only=True, required=False)
+    old_password = serializers.CharField(write_only=True, required=False, max_length=128, trim_whitespace=False)
+    password = serializers.CharField(write_only=True, required=False, max_length=128, trim_whitespace=False)
+    re_password = serializers.CharField(write_only=True, required=False, max_length=128, trim_whitespace=False)
+
+
 class SendEmailSerializer(serializers.ModelSerializer):
     """
         이메일을 검증합니다.
@@ -165,6 +234,25 @@ class SendEmailSerializer(serializers.ModelSerializer):
 
     def is_valid(self, *, raise_exception=False):
         return super().is_valid(raise_exception=raise_exception)
+
+
+class UsernameRequestResponseSerializer(serializers.Serializer):
+    ok = serializers.BooleanField(read_only=True)
+
+
+class EmailChangeRequestResponseSerializer(serializers.Serializer):
+    request_id = serializers.UUIDField(read_only=True)
+
+
+class EmailVerificationRequestSerializer(serializers.Serializer):
+    request_id = serializers.UUIDField(write_only=True)
+    code = serializers.RegexField(r"^\d{6}$", write_only=True)
+
+
+class EmailVerificationResponseSerializer(serializers.Serializer):
+    verified = serializers.BooleanField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+
 
 class ResetPasswordSerializer(PasswordValidationMixin, serializers.ModelSerializer):
     """

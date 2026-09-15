@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from drf_spectacular.views import SpectacularAPIView
 from llm.views import (
     ChatFinalizeView,
     ChatMessageView,
@@ -24,6 +25,7 @@ from llm.views import (
     GuestChatView,
 )
 urlpatterns = [
+    path("schema/", SpectacularAPIView.as_view(), name="api-schema"),
     path("admin/", admin.site.urls),
     path("", include("travel.urls")),
     path("community/", include("community.urls")),

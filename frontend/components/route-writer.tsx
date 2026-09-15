@@ -29,6 +29,7 @@ function WriterIcon({ kind }: { kind: "spark" | "pin" | "arrow" | "save" }) {
 }
 
 type WriterTab = "write" | "chat";
+type PlannerMode = "places" | "draw";
 type Confirmation = { title: string; description: string; label: string; action: () => void; cancelLabel?: string; cancelAction?: () => void };
 const writerTabs: { id: WriterTab; label: string }[] = [{ id: "write", label: "루트 작성" }, { id: "chat", label: "챗봇" }];
 const writerDrafts = new Map<string, MemoryRouteDraft>();
@@ -92,6 +93,8 @@ function WriterForm({ stadiums, initial, existing, copying = false }: { stadiums
   const [start, setStart] = useState<TripRoute["start"]>(restoredDraft ? restoredDraft.start : existing?.start);
   const [tab, setTab] = useState<WriterTab>(restoredDraft?.tab ?? "write");
   const [travelMode, setTravelMode] = useState<TravelMode>(restoredDraft?.travelMode ?? "walk");
+  const [plannerMode, setPlannerMode] = useState<PlannerMode>(() => stops.some(stop => stop.isMapPoint && stop.category === "동선 지점") ? "draw" : "places");
+  const [plannerCompleted, setPlannerCompleted] = useState(false);
   const [error, setError] = useState("");
   const [draftStatus, setDraftStatus] = useState(() => storedDraft.error ? "브라우저 저장 공간을 읽지 못했어요. 변경 내용은 이 화면에만 남아 있어요." : storedDraft.raw && (!storedDraft.draft || !restoredDraft) ? "기존 임시저장 데이터를 확인할 수 없어 덮어쓰지 않았어요." : memoryDraft ? "이 화면에 남아 있던 미저장 변경을 복원했어요." : restoredDraft && storedDraft.draft ? `${new Date(storedDraft.draft.updatedAt).toLocaleString("ko-KR")} 임시저장을 복원했어요.` : "변경 사항 없음");
   const [saving, setSaving] = useState(false);
@@ -191,7 +194,7 @@ function WriterForm({ stadiums, initial, existing, copying = false }: { stadiums
   const selectedStadium = current;
   function changeStadium(code: string) {
     if (code === stadiumCode) return;
-    const change = () => { setStadiumCode(code); setStops([]); setStart(undefined); markDirty(); };
+    const change = () => { setStadiumCode(code); setStops([]); setStart(undefined); setPlannerCompleted(false); markDirty(); };
     if (!stops.length) { change(); return; }
     setConfirmation({ title: "다른 구장 주변을 둘러볼까요?", description: "구장을 바꾸면 선택한 방문 장소가 비워져요. 작성한 제목과 이야기는 그대로 남아요.", label: "구장 바꾸기", action: change });
   }
@@ -265,10 +268,17 @@ function WriterForm({ stadiums, initial, existing, copying = false }: { stadiums
             <legend className="sr-only">직관 루트 작성</legend>
             <section className="writer-card writer-planner-panel" id="writer-panel-planner" aria-labelledby="planner-heading">
               <div className="planner-heading-row">
-                <div><div className="writer-section-title"><span>01</span><h2 id="planner-heading">핀을 골라, 나만의 코스로</h2></div><p>경기 전 식사부터 경기 후 산책까지. 가고 싶은 장소를 직접 이어보세요.</p></div>
-                <div className="writer-field planner-stadium-field"><label htmlFor="route-stadium">어느 구장으로 떠나나요?</label><select id="route-stadium" value={stadiumCode} onChange={(event) => changeStadium(event.target.value)}>{stadiums.map((stadium) => <option key={stadium.code} value={stadium.code}>{stadium.name}</option>)}</select></div>
+                <div className="planner-mode-heading">
+                  <h2 id="planner-heading" className="sr-only">코스 만들기 방법</h2>
+                  <div className="planner-mode-tabs" role="group" aria-labelledby="planner-heading">
+                    <button type="button" aria-pressed={plannerMode === "places"} disabled={plannerCompleted} onClick={() => setPlannerMode("places")}><span>01</span><strong>직접 코스 만들기</strong></button>
+                    <button type="button" aria-pressed={plannerMode === "draw"} disabled={plannerCompleted} onClick={() => setPlannerMode("draw")}><span>02</span><strong>동선으로 코스 짜기</strong></button>
+                  </div>
+                  <p>{plannerMode === "places" ? "가고 싶은 장소를 골라 방문 순서대로 코스를 만들어보세요." : "지도 위를 차례로 눌러 한 가지 색상의 동선을 그려보세요."}</p>
+                </div>
+                <div className="writer-field planner-stadium-field"><label className="sr-only" htmlFor="route-stadium">구장 선택</label><select id="route-stadium" aria-label="구장 선택" value={stadiumCode} disabled={plannerCompleted} onChange={(event) => changeStadium(event.target.value)}>{stadiums.map((stadium) => <option key={stadium.code} value={stadium.code}>{stadium.name}</option>)}</select></div>
               </div>
-              <NearbyRoutePlanner key={stadiumCode} stadium={current} stops={stops} onChange={changeStops} initialStart={start} onStartChange={changeStart} initialTravelMode={travelMode} onTravelModeChange={changeTravelMode} courseName={title} onCourseNameChange={(name) => { setTitle(name); markDirty(); }} onSaveCourse={() => saveCourse()} saving={saving} saveError={error} />
+              <NearbyRoutePlanner key={`${stadiumCode}:${plannerMode}`} plannerMode={plannerMode} stadium={current} stops={stops} onChange={changeStops} initialStart={start} onStartChange={changeStart} initialTravelMode={travelMode} onTravelModeChange={changeTravelMode} courseName={title} onCourseNameChange={(name) => { setTitle(name); markDirty(); }} onSaveCourse={() => saveCourse()} saving={saving} saveError={error} startWithAllPlaces={copying} onCompletionChange={setPlannerCompleted} />
             </section>
             <div className="writer-writing writer-panel" id="writer-panel-write" role="tabpanel" aria-labelledby="writer-tab-write" tabIndex={0}>
               <section className="writer-card">
@@ -280,7 +290,7 @@ function WriterForm({ stadiums, initial, existing, copying = false }: { stadiums
             </div>
 
             <aside className="writer-chat-panel writer-panel" id="writer-panel-chat" role="tabpanel" aria-labelledby="writer-tab-chat" tabIndex={0}>
-              <ChatPopup embedded title="장소를 이어 나의 루트로" />
+              <ChatPopup embedded title="채팅으로 만드는 직관 코스" conversationLabel={null} welcomeTitle="어떤 조건의 코스를 원하시나요?" welcomeDescription={null} welcomeLink={{ href: "/routes", label: "코스 둘러보기" }} />
             </aside>
           </fieldset>
           <div className="writer-save-area">

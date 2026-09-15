@@ -14,15 +14,29 @@ function harness() {
     setItem: (key, value) => { if (blocked) throw new Error("quota"); storage.set(key, value); },
     removeItem: key => storage.delete(key),
   } };
+  let memberHandler = async () => Response.json({ detail: "인증이 필요합니다." }, { status: 401 });
+  class ApiError extends Error {}
+  const apiRequest = async (path, init, fetcher = fetch) => {
+    const response = await fetcher(path, init);
+    if (response.status === 204) return null;
+    const value = await response.json().catch(() => null);
+    if (!response.ok) throw new ApiError(value?.detail ?? "요청 실패");
+    return value;
+  };
+  const requireDependency = name => name === "./api/client"
+    ? { ApiError, apiRequest }
+    : name === "./member-auth-request"
+      ? { memberFetch: (...args) => memberHandler(...args) }
+      : (() => { throw new Error(`unexpected import: ${name}`); })();
   const testModule = { exports: {} };
-  new Function("module", "exports", "window", outputText)(testModule, testModule.exports, window);
-  return { ...testModule.exports, storage, block: () => { blocked = true; } };
+  new Function("module", "exports", "window", "require", outputText)(testModule, testModule.exports, window, requireDependency);
+  return { ...testModule.exports, storage, block: () => { blocked = true; }, member: handler => { memberHandler = handler; } };
 }
 
 const apiCourse = changes => ({
   id: "123e4567-e89b-12d3-a456-426614174000", title: "잠실 직관 코스", stadium: "잠실야구장",
   content: "", duration: "반나절", tags: [], author: "익명", createdAt: "2026-09-12T12:00:00Z",
-  updatedAt: "2026-09-12T12:00:00Z", stops: [{ position: 0, name: "카페", category: "카페", lat: 37.51, lng: 127.07 }],
+  updatedAt: "2026-09-12T12:00:00Z", routeNumber: "000020", stops: [{ position: 0, name: "카페", category: "카페", lat: 37.51, lng: 127.07 }],
   ...changes,
 });
 const route = changes => ({
@@ -134,4 +148,25 @@ test("database sample metadata keeps legacy links and original display fields", 
   assert.equal(sample.views, 9);
   assert.equal(sample.stops.length, 3);
   assert.equal(sample.stops[0].isDrawnPoint, true);
+  assert.equal(sample.apiId, apiCourse({}).id);
+  assert.equal(sample.routeNumber, "000020");
+});
+
+test("member reactions use JWT fetch and anonymous views use an explicit token header", async () => {
+  const api = harness();
+  const id = apiCourse({}).id;
+  const memberCalls = [];
+  api.member(async (url, init) => { memberCalls.push([url, init]); return Response.json({ liked: true, likes: 8 }); });
+  assert.deepEqual(await api.fetchCourseReaction(id), { liked: true, likes: 8 });
+  assert.deepEqual(await api.setCourseReaction(id, true), { liked: true, likes: 8 });
+  const view = await api.recordCourseView(id, "11111111-1111-4111-8111-111111111111", async (url, init) => {
+    assert.equal(url, `/api/courses/${id}/view/`);
+    assert.equal(new Headers(init.headers).get("X-Course-View-Token"), "11111111-1111-4111-8111-111111111111");
+    assert.equal(new Headers(init.headers).has("Cookie"), false);
+    return Response.json({ views: 10 });
+  });
+  assert.deepEqual(view, { views: 10 });
+  assert.deepEqual(memberCalls.map(([url, init]) => [url, init.method ?? "GET"]), [
+    [`/api/courses/${id}/reaction/`, "GET"], [`/api/courses/${id}/reaction/`, "POST"],
+  ]);
 });

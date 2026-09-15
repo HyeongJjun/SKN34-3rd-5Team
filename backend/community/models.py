@@ -8,7 +8,7 @@ from django.utils import timezone
 
 TEAM_CODES = ("LG", "HH", "SK", "SS", "NC", "KT", "LT", "HT", "OB", "WO")
 FREE_CATEGORIES = ("질문", "잡담")
-TEAM_CATEGORIES = FREE_CATEGORIES + ("경기토론", "굿즈", "사진·영상", "응원", "전력토론", "좌석·예매", "직관준비", "직관후기")
+TEAM_CATEGORIES = FREE_CATEGORIES + ("응원", "경기토론", "전력토론", "소식·정보", "이적·신인", "직관후기", "좌석·예매", "직관준비", "굿즈", "사진·영상")
 
 
 def new_post_source_id():

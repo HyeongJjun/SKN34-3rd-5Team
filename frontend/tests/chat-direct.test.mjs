@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, beforeEach, test } from "node:test";
 import { createRequire } from "node:module";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,7 +28,7 @@ global.sessionStorage = {
 };
 const require = createRequire(join(scratch, "entry.cjs"));
 const { clearMemberTokens, saveMemberTokens } = require("./lib/member-auth-request.js");
-const { ChatClientError, getChatStatus, sendChatMessage, sendGuestChatMessage } = require("./lib/chat/client.js");
+const { ChatClientError, deleteChatSession, fetchChatHistory, getChatStatus, renameChatSession, sendChatMessage, sendGuestChatMessage, sendNonStreamChatMessage } = require("./lib/chat/client.js");
 const json = (value, status = 200) => Response.json(value, { status });
 const sse = events => new Response(new ReadableStream({
   start(controller) {
@@ -40,7 +40,7 @@ const sse = events => new Response(new ReadableStream({
 const memberEvents = (turn = "turn-1", chunks = ["첫 ", "답변"]) => [
   ["checkpoint", { turn_id: turn, receipt: "empty" }],
   ...chunks.map((text, index) => ["delta", { turn_id: turn, receipt: `part-${index}`, text }]),
-  ["done", { turn_id: turn, receipt: "complete" }],
+  ["done", { turn_id: turn, receipt: "complete", places: [{ name: "식당" }], coursePayload: { title: "직관 코스" }, route: "course:DOOSAN" }],
 ];
 
 beforeEach(() => { stored.clear(); clearMemberTokens(); });
@@ -52,7 +52,7 @@ test("member completion uses protected direct endpoints and observable finalize 
     const body = init.body && JSON.parse(init.body);
     calls.push({ url: String(url), method: init.method, body, authorization: new Headers(init.headers).get("Authorization") });
     if (init.method === "GET") return json([]);
-    if (String(url) === "/api/chat/sessions/") return json({ id: 7 }, 201);
+    if (String(url) === "/api/chat/sessions/") return json({ id: 7, title: "첫 질문", created_at: "2026-09-15T00:00:00Z", updated_at: "2026-09-15T00:00:00Z" }, 201);
     if (String(url).includes("/finalize/")) return json({
       turn_id: "turn-1", session_id: 7, status: body.status,
       user_message_id: 11, assistant_message_id: 12, assistant_message: body.prefix,
@@ -70,11 +70,31 @@ test("member completion uses protected direct endpoints and observable finalize 
     { reply: reply.reply, status: reply.completionStatus, user: reply.userMessageId, assistant: reply.assistantMessageId },
     { reply: "첫 답변", status: "completed", user: 11, assistant: 12 },
   );
+  assert.deepEqual({ places: reply.places, payload: reply.coursePayload, route: reply.route }, {
+    places: [{ name: "식당" }], payload: { title: "직관 코스" }, route: "course:DOOSAN",
+  });
   assert.deepEqual(calls.map(call => [call.method, call.url]), [
     ["GET", "/api/chat/sessions/"], ["POST", "/api/chat/sessions/"],
     ["POST", "/api/chat/sessions/7/messages/"], ["POST", "/api/chat/turns/turn-1/finalize/"],
   ]);
   assert.ok(calls.every(call => call.authorization === "Bearer access-token"));
+});
+
+test("backend-only session history, rename, delete and JSON message functions are typed direct calls", async () => {
+  saveMemberTokens("access-token", "refresh-token");
+  const calls = [];
+  global.fetch = async (url, init = {}) => {
+    calls.push([init.method ?? "GET", String(url), init.headers]);
+    if (init.method === "DELETE") return new Response(null, { status: 204 });
+    if (init.method === "PATCH") return json({ id: 7, title: "이름", created_at: "2026-09-15T00:00:00Z", updated_at: "2026-09-15T00:00:00Z" });
+    if (String(url).endsWith("/messages/") && init.method === "GET") return json([{ id: 1, sequence_no: 1, role: "human", content: "질문", status: "", created_at: "2026-09-15T00:00:00Z", updated_at: "2026-09-15T00:00:00Z" }]);
+    return json({ session_id: 7, user_message: "질문", assistant_message: "답", status: "completed", user_message_id: 1, assistant_message_id: 2, route: "course:DOOSAN" }, 201);
+  };
+  assert.equal((await renameChatSession(7, "이름")).title, "이름");
+  assert.equal((await fetchChatHistory(7))[0].role, "human");
+  assert.equal((await sendNonStreamChatMessage(7, "질문")).route, "course:DOOSAN");
+  assert.equal(await deleteChatSession(7), undefined);
+  assert.ok(calls.every(([, , headers]) => new Headers(headers).get("Authorization") === "Bearer access-token"));
 });
 
 test("member Stop freezes the last received signed prefix and is not an error", async () => {
@@ -113,7 +133,7 @@ test("member Stop requested before the initial checkpoint persists only the huma
   const controller = new AbortController();
   let frozen = null, finalized;
   global.fetch = async (url, init = {}) => {
-    if (String(url) === "/api/chat/sessions/") return json({ id: 10 }, 201);
+    if (String(url) === "/api/chat/sessions/") return json({ id: 10, title: "질문", created_at: "2026-09-15T00:00:00Z", updated_at: "2026-09-15T00:00:00Z" }, 201);
     if (String(url).includes("/finalize/")) {
       finalized = JSON.parse(init.body);
       return json({ turn_id: "turn-empty", session_id: 10, status: "stopped", user_message_id: 31, assistant_message_id: null, assistant_message: "" });
@@ -207,4 +227,10 @@ test("provider clears guest/member state on every identity switch and renders ex
     assert.match(surface, /게스트 대화/);
     assert.match(surface, /aria-relevant="additions"/);
   }
+});
+
+test("authenticated chat has no legacy Next cookie relay", () => {
+  assert.equal(existsSync(join(frontend, "app/chat-api/route.ts")), false);
+  assert.equal(existsSync(join(frontend, "lib/chat/team.ts")), false);
+  assert.equal(existsSync(join(frontend, "app/baseball-admin-api/route.ts")), false);
 });

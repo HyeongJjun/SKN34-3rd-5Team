@@ -92,6 +92,10 @@ class CommunityPostApiTests(APITestCase):
             with self.subTest(changes=changes):
                 self.assertEqual(self.create_post(key=f"invalid-{len(str(changes))}", **changes).status_code, 400)
 
+        for category in ("소식·정보", "이적·신인"):
+            response = self.create_post(key=f"category-{category}", board="teams", teamCode="LG", category=category)
+            self.assertEqual((response.status_code, response.data["category"]), (201, category))
+
     def test_detail_counts_views_and_only_owner_can_mutate(self):
         created = self.create_post()
         url = f"/community/posts/{created.data['id']}/"

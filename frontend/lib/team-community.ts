@@ -1,5 +1,4 @@
-import type { CommunityPostCategory } from "./community-post-category";
-import type { CommunityPostNumber } from "./community-post-number";
+import type { CommunityPostDto } from "./api/content";
 
 export const teamBoards = [
   { code: "LG", name: "LG 트윈스", shortName: "LG", stadium: "잠실야구장" },
@@ -14,24 +13,7 @@ export const teamBoards = [
   { code: "WO", name: "키움 히어로즈", shortName: "키움", stadium: "고척스카이돔" },
 ] as const;
 
-export type TeamCommunityPost = {
-  id: string;
-  sourceId: string;
-  postNumber: CommunityPostNumber;
-  board: "free" | "teams";
-  authorId?: number | null;
-  author: string;
-  createdAt: string | null;
-  views: number;
-  recommendations: number;
-  downvotes?: number;
-  commentCount?: number;
-  teamCode: string;
-  category: CommunityPostCategory;
-  title: string;
-  content: string;
-  isSample: boolean;
-};
+export type TeamCommunityPost = CommunityPostDto;
 
 export function getTeamBoard(code: string) {
   return teamBoards.find(team => team.code === code.toUpperCase());

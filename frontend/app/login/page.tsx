@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { memberError, saveMemberTokens } from "@/lib/member-auth-request";
+import { saveMemberTokens } from "@/lib/member-auth-request";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { AuthDialog } from "@/components/auth-dialog";
 import { useAuthHydrated } from "@/components/auth-hydration";
+import { requestPasswordReset, requestUsername, signIn, updatePassword } from "@/lib/api/auth";
 
 type LoginErrors = { username?: string; password?: string };
 
@@ -38,15 +39,15 @@ export default function LoginPage() {
   async function submitHelp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (helpBusy || !help) return;
     const form = event.currentTarget, values = new FormData(form);
-    const url = help === "id" ? "/api/auth/username/request" : help === "password" ? "/api/auth/password/request" : "/api/auth/password";
     const newPassword = String(values.get("newPassword") ?? ""), confirmation = String(values.get("confirmPassword") ?? "");
-    const body = help === "reset" ? { ...reset, new_password: newPassword, new_password_confirm: confirmation } : { email: String(values.get("email") ?? "").trim() };
+    const email = String(values.get("email") ?? "").trim();
     if (help === "reset" && newPassword !== confirmation) { setHelpMessage("새 비밀번호 확인이 일치하지 않아요."); return; }
     setHelpBusy(true); setHelpMessage("");
     try {
-      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(40000), body: JSON.stringify(body) });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(memberError(result, "요청을 처리하지 못했어요."));
+      const signal = AbortSignal.timeout(40000);
+      if (help === "id") await requestUsername({ email }, signal);
+      else if (help === "password") await requestPasswordReset({ email }, signal);
+      else await updatePassword({ uid: reset?.uid ?? "", token: reset?.token ?? "", new_password: newPassword, new_password_confirm: confirmation }, false, signal);
       if (help === "reset") { history.replaceState(null, "", "/login"); setReset(null); setHelp(null); setMessage("비밀번호를 재설정했어요. 새 비밀번호로 로그인해 주세요."); }
       else setHelpMessage(help === "id" ? "계정이 확인되면 가입 이메일로 아이디를 보냈어요." : "계정이 확인되면 가입 이메일로 재설정 링크를 보냈어요.");
     } catch (error) { setHelpMessage(error instanceof DOMException && error.name === "TimeoutError" ? "요청 결과를 확인하지 못했어요. 메일함을 확인한 뒤 다시 요청해 주세요." : error instanceof Error ? error.message : "서버에 연결하지 못했어요."); }
@@ -69,9 +70,8 @@ export default function LoginPage() {
     }
     setBusy(true);
     try {
-      const response = await fetch("/api/auth/signin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: String(fields.get("username") ?? ""), password: String(fields.get("password") ?? "") }) });
-      const result = await response.json();
-      if (!response.ok || typeof result.access !== "string" || typeof result.refresh !== "string") throw new Error(memberError(result, "로그인에 실패했어요."));
+      const result = await signIn({ username: String(fields.get("username") ?? ""), password: String(fields.get("password") ?? "") });
+      if (!result) throw new Error("로그인 응답을 확인하지 못했어요.");
       saveMemberTokens(result.access, result.refresh);
       window.location.assign(new URLSearchParams(window.location.search).get("next") === "admin" ? "/admin" : "/routes/new");
     } catch (error) {
@@ -89,10 +89,11 @@ export default function LoginPage() {
         <h1 id="login-title">로그인</h1>
         <p className="auth-description">나만의 직관 코스, 이어서 만들어 볼까요?</p>
         {message && <p ref={feedbackRef} tabIndex={-1} className="auth-feedback auth-feedback-top" role="alert">{message}</p>}
-        <button className="auth-kakao" type="button" onClick={() => setMessage("카카오 로그인 연결을 준비하고 있어요. 연결 후 카카오 계정으로 시작할 수 있어요.")}>
+        <button className="auth-kakao" type="button" disabled aria-describedby="kakao-login-status">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 3C6.48 3 2 6.4 2 10.6c0 2.7 1.84 5.07 4.62 6.42L5.44 21l4.62-2.91c.63.08 1.28.12 1.94.12 5.52 0 10-3.4 10-7.61S17.52 3 12 3Z" /></svg>
-          카카오로 시작하기
+          카카오 로그인 준비 중
         </button>
+        <p id="kakao-login-status" className="auth-service-note">현재 카카오 계정 로그인은 지원하지 않아요. 아이디 로그인을 이용해 주세요.</p>
         <div className="auth-divider"><span>또는 아이디로 로그인</span></div>
         <form onSubmit={submit} method="post" className="auth-form" noValidate>
           <div className="auth-field">

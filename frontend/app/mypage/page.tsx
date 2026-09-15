@@ -8,18 +8,17 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useMemberAuth, type MemberUser } from "@/lib/member-auth";
 import { retryRoutes, useRoutes, useLikedRoutes, useRoutesError, useRoutesReady } from "@/lib/routes";
 import { teamBoards } from "@/lib/team-community";
-import { nextNicknameChangeAt } from "@/lib/member-policy";
-import { memberError, memberFetch } from "@/lib/member-auth-request";
+import { memberRoleLabel, nextNicknameChangeAt } from "@/lib/member-policy";
+import { updateMemberUser, type MemberUserUpdate } from "@/lib/api/auth";
 import { RouteCard } from "@/components/route-card";
 import { MemberPosts } from "@/components/member-posts";
 import styles from "./page.module.css";
 
-async function patchUser(payload: Record<string, unknown>, signal = AbortSignal.timeout(15000)): Promise<MemberUser> {
-  let response: Response;
-  try { response = await memberFetch("/api/auth/user", { method: "PATCH", headers: { "Content-Type": "application/json" }, signal, body: JSON.stringify(payload) }); }
-  catch (error) { throw new Error(error instanceof DOMException && error.name === "TimeoutError" ? "요청 결과를 확인하지 못했어요. 새로고침해 저장 상태를 확인해 주세요." : "회원 서버에 연결하지 못했어요."); }
-  const result = await response.json();
-  if (!response.ok) throw new Error(memberError(result, "회원 정보를 저장하지 못했어요."));
+async function patchUser(payload: MemberUserUpdate, signal = AbortSignal.timeout(15000)): Promise<MemberUser> {
+  let result: MemberUser | null;
+  try { result = await updateMemberUser(payload, signal); }
+  catch (error) { throw new Error(error instanceof DOMException && error.name === "TimeoutError" ? "요청 결과를 확인하지 못했어요. 새로고침해 저장 상태를 확인해 주세요." : error instanceof Error ? error.message : "회원 서버에 연결하지 못했어요."); }
+  if (!result) throw new Error("회원 정보를 저장하지 못했어요.");
   return result;
 }
 
@@ -50,7 +49,7 @@ function MyPageContent() {
   const visible = tab === "likes" ? liked : own;
   return <main className={`container ${styles.page}`}>
     <p className="eyebrow">MY PAGE</p><h1>마이페이지</h1>
-    <section className={styles.profile} aria-label="내 프로필"><div className={styles.avatarWrap}><div className={styles.avatar} aria-hidden="true">{user.avatar ? <Image src={user.avatar} alt="" width={60} height={60} unoptimized /> : <Image src="/images/default-avatar.svg" alt="" width={60} height={60} />}</div>{team && <span className={styles.teamBadge} title={team.name}><Image src={`/images/teams/${team.code.toLowerCase()}.svg`} alt={`응원팀 ${team.name}`} width={22} height={22} /></span>}</div><div><h2 className={styles.memberName}>{displayName}님</h2><p>일반 회원 · {team?.name ?? "응원팀 미설정"}</p></div><Link href="/routes/new" className="button button-primary">코스 만들기</Link></section>
+    <section className={styles.profile} aria-label="내 프로필"><div className={styles.avatarWrap}><div className={styles.avatar} aria-hidden="true">{user.avatar ? <Image src={user.avatar} alt="" width={60} height={60} unoptimized /> : <Image src="/images/default-avatar.svg" alt="" width={60} height={60} />}</div>{team && <span className={styles.teamBadge} title={team.name}><Image src={`/images/teams/${team.code.toLowerCase()}.svg`} alt={`응원팀 ${team.name}`} width={22} height={22} /></span>}</div><div><h2 className={styles.memberName}>{displayName}님</h2><p>{memberRoleLabel(user)} · {team?.name ?? "응원팀 미설정"}</p></div><Link href="/routes/new" className="button button-primary">코스 만들기</Link></section>
     <p className={styles.note}>계정·프로필 설정은 서버에 저장돼요. 새 코스는 공개되며 편집 권한만 이 브라우저에 저장돼요. 이전 버전 코스는 다시 저장하기 전까지 이 브라우저에만 남아요.</p>
     {loadError && <p className={styles.note} role="alert">{loadError} 이전 버전 코스만 표시될 수 있어요. <button type="button" onClick={() => void retryRoutes()}>다시 불러오기</button></p>}
     <nav className={styles.tabs} aria-label="마이페이지 메뉴">
@@ -60,7 +59,7 @@ function MyPageContent() {
       <ProfilePhotoEditor avatar={user.avatar} onSaved={async avatar => { const updated = await patchUser({ avatar }); setUser(updated, user.id); }} />
       <form key={`${user.nickname}:${user.team_code}:${user.email}`} onSubmit={async event => {
         event.preventDefault(); if (saveRequest.current) return; const values = new FormData(event.currentTarget), controller = new AbortController(); saveRequest.current = controller; setSaving(true); setMessage("");
-        try { const updated = await patchUser({ nickname: String(values.get("nickname") ?? ""), team_code: String(values.get("teamCode") ?? ""), first_name: String(values.get("firstName") ?? ""), birth_date: String(values.get("birthDate") ?? "") || null, gender: String(values.get("gender") ?? "") || null, notifications: { comments: values.has("notify-comments"), courses: values.has("notify-courses"), announcements: values.has("notify-announcements") }, visibility: { courses: values.has("public-courses"), posts: values.has("public-posts"), likes: values.has("public-likes") } }, AbortSignal.any([controller.signal, AbortSignal.timeout(15000)])); if (setUser(updated, user.id)) setMessage("변경사항을 저장했어요."); }
+        try { const updated = await patchUser({ nickname: String(values.get("nickname") ?? ""), team_code: String(values.get("teamCode") ?? ""), first_name: String(values.get("firstName") ?? ""), birth_date: String(values.get("birthDate") ?? "") || null, gender: (String(values.get("gender") ?? "") || null) as "M" | "F" | null, notifications: { comments: values.has("notify-comments"), courses: values.has("notify-courses"), announcements: values.has("notify-announcements") }, visibility: { courses: values.has("public-courses"), posts: values.has("public-posts"), likes: values.has("public-likes") } }, AbortSignal.any([controller.signal, AbortSignal.timeout(15000)])); if (setUser(updated, user.id)) setMessage("변경사항을 저장했어요."); }
         catch (cause) { setMessage(cause instanceof Error ? cause.message : "저장하지 못했어요."); }
         finally { saveRequest.current = null; setSaving(false); }
       }}>

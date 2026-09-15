@@ -52,6 +52,7 @@ AUTH_USER_MODEL = 'accounts.CustomUser'
 
 INSTALLED_APPS = [
     'rest_framework',
+    'drf_spectacular',
     "rest_framework_simplejwt",
     'rest_framework_simplejwt.token_blacklist',
     'django.contrib.admin',
@@ -200,11 +201,23 @@ if email_backend == "django.core.mail.backends.smtp.EmailBackend":
 
 REST_FRAMEWORK = {
     'NUM_PROXIES': 1,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_THROTTLE_RATES': {
         'course_write': '30/hour',
+    },
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'KBO Journey API',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SCHEMA_PATH_PREFIX_INSERT': '/api',
+    'ENUM_NAME_OVERRIDES': {
+        'ChatFinalizeStatusEnum': [('completed', 'completed'), ('stopped', 'stopped')],
+        'CompletedStatusEnum': [('completed', 'completed')],
     },
 }
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useSyncExternalStore } from "react";
-import { fetchCourses, persistCourse, removeCourse } from "./course-api";
+import { useEffect, useSyncExternalStore } from "react";
+import { fetchCourseReaction, fetchCourses, persistCourse, recordCourseView, removeCourse, setCourseReaction } from "./course-api";
+import { createClientId } from "./client-id";
 
 export type RouteStop = { name: string; lat: number; lng: number; category: string; placeId?: string; visitId?: string; address?: string; tourContentId?: string; isMapPoint?: boolean; isDrawnPoint?: boolean };
 export function areValidCoordinates(lat: unknown, lng: unknown): boolean {
@@ -13,6 +14,7 @@ export type TripRoute = {
   author: string; likes: number; isSample: boolean; createdAt: string;
   views?: number; contentFormat?: "html";
   routeNumber?: string;
+  apiId?: string;
   start?: { lat: number; lng: number };
   owned?: boolean;
   legacy?: boolean;
@@ -20,8 +22,7 @@ export type TripRoute = {
   saveWarning?: string;
 };
 
-const LIKES_KEY = "kbo-trip-likes-v1";
-const VIEWS_KEY = "kbo-trip-views-v1";
+const VIEW_TOKEN_KEY = "kbo-course-view-token";
 const ROUTES_KEY = "kbo-trip-routes-v1";
 const viewedThisSession = new Set<string>();
 const CHANGE_EVENT = "kbo-routes-change";
@@ -44,6 +45,7 @@ function isRoute(value: unknown): value is TripRoute {
     && (item.legacy === undefined || typeof item.legacy === "boolean")
     && (item.legacySourceId === undefined || typeof item.legacySourceId === "string")
     && (item.saveWarning === undefined || typeof item.saveWarning === "string")
+    && (item.apiId === undefined || typeof item.apiId === "string")
     && (item.start === undefined || (item.start !== null && typeof item.start === "object" && areValidCoordinates((item.start as Record<string, unknown>).lat, (item.start as Record<string, unknown>).lng)))
     && Array.isArray(item.tags) && item.tags.every(tag => typeof tag === "string")
     && Array.isArray(item.stops) && item.stops.every(stop => stop && typeof stop === "object" && typeof stop.name === "string" && typeof stop.category === "string" && (stop.placeId === undefined || typeof stop.placeId === "string") && (stop.visitId === undefined || typeof stop.visitId === "string") && (stop.address === undefined || typeof stop.address === "string") && (stop.tourContentId === undefined || typeof stop.tourContentId === "string") && (stop.isMapPoint === undefined || typeof stop.isMapPoint === "boolean") && (stop.isDrawnPoint === undefined || typeof stop.isDrawnPoint === "boolean") && areValidCoordinates(stop.lat, stop.lng));
@@ -63,10 +65,9 @@ function removeStoredRoute(id: string): void {
   persist(ROUTES_KEY, parsed.filter(item => !item || typeof item !== "object" || (item as Record<string, unknown>).id !== id));
 }
 
-function subscribeStorage(callback: () => void) {
-  window.addEventListener("storage", callback);
+function subscribeLikes(callback: () => void) {
   window.addEventListener(CHANGE_EVENT, callback);
-  return () => { window.removeEventListener("storage", callback); window.removeEventListener(CHANGE_EVENT, callback); };
+  return () => window.removeEventListener(CHANGE_EVENT, callback);
 }
 
 function persist(key: string, value: unknown): void {
@@ -145,40 +146,59 @@ export function useRoutesError(): string {
   return useSyncExternalStore(subscribeRoutes, () => routesError, () => "");
 }
 
-function parseViews(raw: string): Record<string, number> {
+let sessionViewToken = "";
+function viewToken(): string {
+  if (sessionViewToken) return sessionViewToken;
   try {
-    const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-    return Object.fromEntries(Object.entries(value).filter(([, count]) => typeof count === "number" && Number.isSafeInteger(count) && count >= 0));
-  } catch { return {}; }
+    const stored = window.localStorage.getItem(VIEW_TOKEN_KEY) || "";
+    sessionViewToken = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(stored) ? stored : createClientId();
+    window.localStorage.setItem(VIEW_TOKEN_KEY, sessionViewToken);
+  } catch { sessionViewToken = createClientId(); }
+  return sessionViewToken;
 }
 
-export function useRouteViews(): Record<string, number> {
-  const raw = useSyncExternalStore(subscribeStorage, () => readStorage(VIEWS_KEY), () => EMPTY);
-  return useMemo(() => parseViews(raw), [raw]);
+function updateRoute(id: string, changes: Partial<TripRoute>) {
+  serverRoutes = serverRoutes.map(route => route.id === id ? { ...route, ...changes } : route);
+  publishRoutes();
 }
 
-// These counts belong to this browser until the team's post API is connected.
 export function recordRouteView(id: string): void {
   if (viewedThisSession.has(id)) return;
-  const views = parseViews(readStorage(VIEWS_KEY));
-  try {
-    persist(VIEWS_KEY, { ...views, [id]: (views[id] ?? 0) + 1 });
-    viewedThisSession.add(id);
-  } catch { /* Viewing a route must still work if browser storage is unavailable. */ }
+  const route = serverRoutes.find(item => item.id === id);
+  if (!route) return;
+  viewedThisSession.add(id);
+  void recordCourseView(route.apiId ?? route.id, viewToken())
+    .then(({ views }) => updateRoute(id, { views }))
+    .catch(() => { /* Viewing a route must still work if metrics are unavailable. */ });
 }
 
-function parseLikes(raw: string): string[] {
-  try { const result: unknown = JSON.parse(raw); return Array.isArray(result) ? result.filter(id => typeof id === "string") : []; }
-  catch { return []; }
+const likedRoutes = new Set<string>();
+let likesRevision = 0;
+function updateLiked(id: string, liked: boolean) {
+  if (liked) likedRoutes.add(id); else likedRoutes.delete(id);
+  likesRevision += 1;
+  window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
 export function useLikedRoutes(): string[] {
-  const raw = useSyncExternalStore(subscribeStorage, () => readStorage(LIKES_KEY), () => EMPTY);
-  return useMemo(() => parseLikes(raw), [raw]);
+  useSyncExternalStore(subscribeLikes, () => likesRevision, () => 0);
+  return [...likedRoutes];
 }
 
-export function toggleRouteLike(id: string): void {
-  const likes = parseLikes(readStorage(LIKES_KEY));
-  persist(LIKES_KEY, likes.includes(id) ? likes.filter(item => item !== id) : [...likes, id]);
+export async function loadRouteLike(id: string): Promise<void> {
+  const route = serverRoutes.find(item => item.id === id);
+  if (!route) return;
+  updateLiked(id, false);
+  const result = await fetchCourseReaction(route.apiId ?? route.id);
+  updateLiked(id, result.liked);
+  updateRoute(id, { likes: result.likes });
+}
+
+export async function toggleRouteLike(id: string): Promise<boolean> {
+  const route = serverRoutes.find(item => item.id === id);
+  if (!route) throw new Error("코스를 찾을 수 없어요.");
+  const result = await setCourseReaction(route.apiId ?? route.id, !likedRoutes.has(id));
+  updateLiked(id, result.liked);
+  updateRoute(id, { likes: result.likes });
+  return result.liked;
 }
