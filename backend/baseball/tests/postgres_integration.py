@@ -18,6 +18,7 @@ from django.core.management import call_command  # noqa: E402
 from django.core.management.base import CommandError  # noqa: E402
 
 from baseball import models  # noqa: E402
+from baseball.serializers import RESOURCE_MODELS  # noqa: E402
 from baseball.query_repository import (  # noqa: E402
     BaseballQueryAccessDeniedError,
     BaseballQueryLockTimeoutError,
@@ -51,6 +52,8 @@ class BaseballPostgresIntegrationTest(unittest.TestCase):
 
     @classmethod
     def _create_fixtures(cls):
+        for model in reversed(RESOURCE_MODELS.values()):
+            model.objects.all().delete()
         now = datetime(2026, 9, 14, tzinfo=timezone.utc)
         team1 = models.Team.objects.create(id=1, team_code="H", team_name_ko="홈")
         team2 = models.Team.objects.create(id=2, team_code="A", team_name_ko="원정")
