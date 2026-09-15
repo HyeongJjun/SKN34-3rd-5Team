@@ -230,3 +230,7 @@ frontend/.member-preview/
 /data/mailpit/
 /graphify-out/*
 /data/mailpit/*
+.gstack/*
+.hermes/*
+.vscode/*
+.claude/*
