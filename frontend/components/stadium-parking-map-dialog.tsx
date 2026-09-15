@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import { Icon } from "@/components/icons";
 import { getStadiumParkingMap } from "@/lib/stadium-parking-maps";
 
@@ -14,11 +14,12 @@ export function StadiumParkingMapDialog({ stadiumCode, className = "" }: Stadium
   const parking = getStadiumParkingMap(stadiumCode);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const id = useId();
 
   if (!parking) return null;
 
-  const titleId = `parking-map-title-${parking.stadiumCode.toLowerCase()}`;
-  const descriptionId = `parking-map-description-${parking.stadiumCode.toLowerCase()}`;
+  const titleId = `parking-map-title-${parking.stadiumCode.toLowerCase()}-${id}`;
+  const descriptionId = `parking-map-description-${parking.stadiumCode.toLowerCase()}-${id}`;
 
   function closeDialog() {
     dialogRef.current?.close();
@@ -64,8 +65,7 @@ export function StadiumParkingMapDialog({ stadiumCode, className = "" }: Stadium
               alt={`${parking.stadiumName} ${parking.title} 위치 안내`}
               width={parking.width}
               height={parking.height}
-              sizes="(max-width: 760px) calc(100vw - 32px), 900px"
-              priority
+              unoptimized
             />
           </div>
           <footer className="stadium-parking-dialog-footer">
