@@ -27,6 +27,7 @@ const groups = [
   {
     title: "커뮤니티", icon: "chat",
     items: [
+      { title: "직관", href: "/routes" },
       { title: "자유 게시판", href: "/community" },
       { title: "팀 게시판", href: "/community/teams" },
       { title: "승부 예측", href: "/community/predictions" },

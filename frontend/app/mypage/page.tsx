@@ -11,6 +11,7 @@ import { teamBoards } from "@/lib/team-community";
 import { nextNicknameChangeAt } from "@/lib/member-policy";
 import { memberError, memberFetch } from "@/lib/member-auth-request";
 import { RouteCard } from "@/components/route-card";
+import { MemberPosts } from "@/components/member-posts";
 import styles from "./page.module.css";
 
 async function patchUser(payload: Record<string, unknown>, signal = AbortSignal.timeout(15000)): Promise<MemberUser> {
@@ -55,7 +56,7 @@ function MyPageContent() {
     <nav className={styles.tabs} aria-label="마이페이지 메뉴">
       {[["courses",`내 코스 (${own.length})`],["likes",`찜한 코스 (${liked.length})`],["posts","내가 쓴 글"],["profile","회원 정보"]].map(([value, label]) => <button key={value} type="button" aria-pressed={tab === value} onClick={() => router.push(`/mypage?tab=${value}`, { scroll: false })}>{label}</button>)}
     </nav>
-    {tab === "posts" ? <section className={styles.empty}><h2>아직 계정 데이터와 연결되지 않았어요</h2><p>이 브라우저의 게시글을 실회원 소유 데이터로 표시하지 않아요.</p></section> : tab === "profile" ? <section className={styles.settings}><h2>회원정보 수정</h2>
+    {tab === "posts" ? <MemberPosts /> : tab === "profile" ? <section className={styles.settings}><h2>회원정보 수정</h2>
       <ProfilePhotoEditor avatar={user.avatar} onSaved={async avatar => { const updated = await patchUser({ avatar }); setUser(updated, user.id); }} />
       <form key={`${user.nickname}:${user.team_code}:${user.email}`} onSubmit={async event => {
         event.preventDefault(); if (saveRequest.current) return; const values = new FormData(event.currentTarget), controller = new AbortController(); saveRequest.current = controller; setSaving(true); setMessage("");

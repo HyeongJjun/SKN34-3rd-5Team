@@ -19,10 +19,12 @@ export type TeamCommunityPost = {
   sourceId: string;
   postNumber: CommunityPostNumber;
   board: "free" | "teams";
+  authorId?: number | null;
   author: string;
   createdAt: string | null;
   views: number;
   recommendations: number;
+  downvotes?: number;
   commentCount?: number;
   teamCode: string;
   category: CommunityPostCategory;

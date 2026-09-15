@@ -1,15 +1,16 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons";
 import { RouteNumber } from "@/components/route-number";
 import { formatRouteDate } from "@/components/route-card";
 import { RouteBoardSkeleton, RouteListSkeleton } from "@/components/route-skeleton";
 import { retryRoutes, useLikedRoutes, useRoutes, useRoutesError, useRoutesReady, useRouteViews } from "@/lib/routes";
 import { routeContentToText } from "@/lib/route-content";
-import { CommunityBoardTabs, TeamCommunityBoard } from "@/components/team-community-board";
+import { CommunityNavigation } from "@/components/community-navigation";
+import { getTeamBoardHref } from "@/lib/team-community";
 
 const stadiums = ["전체", "잠실", "고척", "인천", "수원", "대전", "대구", "광주", "사직", "창원"];
 type SearchField = "all" | "title" | "content" | "author";
@@ -72,7 +73,7 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
         <Link href={writeHref} className="button button-primary community-write"><Icon name="book" size={18}/>글쓰기</Link>
       </header>
 
-      <CommunityBoardTabs active="routes"/>
+      <CommunityNavigation active="routes"/>
 
       <div className="community-layout">
         <section className="community-board" aria-labelledby="community-board-heading">
@@ -146,10 +147,17 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
 
 function RoutesQuery() {
   const params = useSearchParams();
-  if (params.get("board") === "free") return <TeamCommunityBoard key={params.toString()} teamCode={params.get("team") ?? ""} postId={params.get("post") ?? ""}/>;
+  if (params.get("board") === "free") return <LegacyTeamBoardRedirect teamCode={params.get("team") ?? ""} postId={params.get("post") ?? ""}/>;
   const requestedStadium = params.get("stadium") ?? "전체";
   const initialStadium = stadiums.find(stadium => normalize(requestedStadium).includes(stadium)) ?? "전체";
   return <CommunityBoard key={params.toString()} initialQuery={params.get("q") ?? ""} initialStadium={initialStadium} deleted={params.get("deleted") === "1"}/>;
+}
+
+function LegacyTeamBoardRedirect({ teamCode, postId }: { teamCode: string; postId: string }) {
+  const router = useRouter();
+  const href = getTeamBoardHref(teamCode, postId);
+  useEffect(() => { router.replace(href); }, [href, router]);
+  return <main className="container community-page"><p role="status">팀 게시판으로 이동하고 있어요.</p></main>;
 }
 
 export default function RoutesPage() {

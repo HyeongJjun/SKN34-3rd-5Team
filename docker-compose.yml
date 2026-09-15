@@ -29,7 +29,16 @@ services:
 
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CHAT_CHECKPOINT_SIGNING_KEY: ${CHAT_CHECKPOINT_SIGNING_KEY:?Set CHAT_CHECKPOINT_SIGNING_KEY}
+      CHAT_TRUST_PROXY_HEADERS: "true"
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      LLM_MODEL: ${LLM_MODEL:-gpt-5.6-luna}
+      # 챗봇을 KBO 직관 RAG 로 돌릴지. 0 이면 기존 helpful-assistant 체인 그대로 (비교 시연용)
+      CHAT_USE_RAG: ${CHAT_USE_RAG:-0}
+      # LangSmith 추적·평가. 키가 없으면 traceable 이 no-op 이라 오버헤드 0
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-kbo-rag}
       AUTH_FRONTEND_ORIGIN: ${AUTH_FRONTEND_ORIGIN:-http://127.0.0.1:80}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
       EMAIL_HOST: ${EMAIL_HOST:-mailpit}
@@ -38,6 +47,7 @@ services:
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
       EMAIL_USE_TLS: ${EMAIL_USE_TLS:-false}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-}
+      DEMO_USERS_ENABLED: ${DEMO_USERS_ENABLED:-false}
 
       # Docker 내부에서는 db 서비스명으로 접근
       DB_HOST: db
@@ -45,6 +55,13 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
+      BASEBALL_DB_USER: ${BASEBALL_DB_USER:-}
+      BASEBALL_DB_PASSWORD: ${BASEBALL_DB_PASSWORD:-}
+      BASEBALL_QUERY_MAX_ROWS: ${BASEBALL_QUERY_MAX_ROWS:-200}
+      BASEBALL_QUERY_TIMEOUT_MS: ${BASEBALL_QUERY_TIMEOUT_MS:-3000}
+      BASEBALL_QUERY_LOCK_TIMEOUT_MS: ${BASEBALL_QUERY_LOCK_TIMEOUT_MS:-1000}
+      BASEBALL_QUERY_MAX_SQL_BYTES: ${BASEBALL_QUERY_MAX_SQL_BYTES:-32768}
+      BASEBALL_QUERY_MAX_RESPONSE_BYTES: ${BASEBALL_QUERY_MAX_RESPONSE_BYTES:-1048576}
 
     volumes:
       - ./backend:/app
@@ -63,6 +80,7 @@ services:
 
     command: >
       sh -c "python manage.py migrate &&
+             python manage.py provision_baseball_reader --prepare-db-permissions &&
              python manage.py runserver 0.0.0.0:8000"
 
 

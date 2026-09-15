@@ -16,6 +16,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from baseball.limits import positive_int_env
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env", override=False)
@@ -31,6 +33,10 @@ SECRET_KEY = 'django-insecure-xg6ypt+%hw2k@xak+x#7bqqpn(-^vu73^9qh3xnh*=^$pn6jg*
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 DEMO_USERS_ENABLED = os.getenv("DEMO_USERS_ENABLED", "false").strip().lower() == "true"
+CHAT_CHECKPOINT_SIGNING_KEY = os.getenv("CHAT_CHECKPOINT_SIGNING_KEY", "")
+CHAT_TRUST_PROXY_HEADERS = os.getenv("CHAT_TRUST_PROXY_HEADERS", "false").strip().lower() == "true"
+CHAT_GUEST_RATE_LIMIT = int(os.getenv("CHAT_GUEST_RATE_LIMIT", "10"))
+CHAT_GUEST_RATE_WINDOW = int(os.getenv("CHAT_GUEST_RATE_WINDOW", "60"))
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -55,6 +61,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.postgres',
+    'baseball.apps.BaseballConfig',
     'llm',
     'accounts',
     'travel',
@@ -102,8 +109,26 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASSWORD", "mypassword"),
         "HOST": os.getenv("DB_HOST", "db"),  # 로컬 도커 기본값. 원격 DB는 backend/.env 의 DB_HOST 로
         "PORT": os.getenv("DB_PORT", "5432"),
-    }
+    },
+    "baseball_readonly": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME", "mydb"),
+        "USER": os.getenv("BASEBALL_DB_USER", ""),
+        "PASSWORD": os.getenv("BASEBALL_DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", "db"),
+        "PORT": os.getenv("DB_PORT", "5432"),
+    },
 }
+
+DATABASE_ROUTERS = ["baseball.db_router.BaseballDatabaseRouter"]
+
+BASEBALL_QUERY_MAX_ROWS = positive_int_env("BASEBALL_QUERY_MAX_ROWS", 200)
+BASEBALL_QUERY_TIMEOUT_MS = positive_int_env("BASEBALL_QUERY_TIMEOUT_MS", 3000)
+BASEBALL_QUERY_LOCK_TIMEOUT_MS = positive_int_env("BASEBALL_QUERY_LOCK_TIMEOUT_MS", 1000)
+BASEBALL_QUERY_MAX_SQL_BYTES = positive_int_env("BASEBALL_QUERY_MAX_SQL_BYTES", 32768)
+BASEBALL_QUERY_MAX_RESPONSE_BYTES = positive_int_env(
+    "BASEBALL_QUERY_MAX_RESPONSE_BYTES", 1024 * 1024
+)
 
 
 # Password validation
