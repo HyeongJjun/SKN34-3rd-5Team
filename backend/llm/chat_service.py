@@ -85,6 +85,12 @@ class ChatService:
         return results, schema_seen
 
     def _run(self, values):
+        # CHAT_USE_RAG=1 이면 KBO 직관 RAG 가 답한다 (0 이거나 테스트 중이면 None → 아래 도구 루프 그대로).
+        # 지연 import: RAG 모듈이 깨져도 서버 기동은 되게.
+        from .rag.pipeline import chat_chain
+
+        if rag := chat_chain():
+            return rag.invoke(values)
         scratchpad, schema_seen, calls = [], False, 0
         limit_answer = "도구 호출 한도를 초과해 조회를 완료하지 못했습니다. 질문 범위를 줄여 주세요."
         for _ in range(self.MAX_TOOL_ROUNDS + 1):
@@ -165,6 +171,11 @@ class ChatService:
 
     def stream_with_history(self, messages, question: str):
         """주어진 제한된 기록으로 모델 청크를 내보냅니다."""
+        from .rag.pipeline import chat_chain
+
+        if rag := chat_chain():
+            yield from rag.stream({"question": question, "chat_history": messages})
+            return
         inputs = self._plan_stream({"question": question, "chat_history": messages})
         if inputs is None:
             yield "도구 호출 한도를 초과해 조회를 완료하지 못했습니다. 질문 범위를 줄여 주세요."
