@@ -1,6 +1,7 @@
 from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema
 from rest_framework import serializers, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -8,35 +9,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import CommunityComment, CommunityPost, CommunityReport, CommunityVote
-
-
-class _CommentSerializer(serializers.ModelSerializer):
-    postId = serializers.CharField(source="post_id", read_only=True)
-    authorId = serializers.IntegerField(source="author_id", read_only=True)
-    author = serializers.SerializerMethodField()
-    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
-    updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
-
-    class Meta:
-        model = CommunityComment
-        fields = ("id", "postId", "authorId", "author", "content", "createdAt", "updatedAt")
-        read_only_fields = ("id",)
-
-    def get_author(self, comment):
-        return comment.author.nickname or comment.author.username
-
-
-class _VoteSerializer(serializers.Serializer):
-    vote = serializers.ChoiceField(choices=("up", "down"), allow_null=True)
-
-
-class _ReportSerializer(serializers.Serializer):
-    reason = serializers.ChoiceField(choices=("spam", "abuse", "inappropriate", "privacy", "other"))
-    detail = serializers.CharField(max_length=50, allow_blank=True, trim_whitespace=True)
-
-
-class _ContentSerializer(serializers.Serializer):
-    content = serializers.CharField(max_length=2000, allow_blank=False, trim_whitespace=True)
+from .serializers import (
+    CommunityCommentSerializer,
+    CommunityCommentWriteSerializer,
+    CommunityReportResultSerializer,
+    CommunityReportWriteSerializer,
+    CommunityVoteStateSerializer,
+    CommunityVoteWriteSerializer,
+)
 
 
 def _vote_counts(post):
@@ -58,6 +38,10 @@ class CommentListCreateView(APIView):
     def get_permissions(self):
         return [AllowAny()] if self.request.method == "GET" else [IsAuthenticated()]
 
+    @extend_schema(
+        parameters=[OpenApiParameter("order", OpenApiTypes.STR, enum=("oldest", "newest"))],
+        responses={200: CommunityCommentSerializer(many=True), 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT}, auth=[],
+    )
     def get(self, request, source_id):
         post = get_object_or_404(CommunityPost, source_id=source_id)
         order = request.query_params.get("order", "oldest")
@@ -65,18 +49,22 @@ class CommentListCreateView(APIView):
             raise serializers.ValidationError({"order": "oldest 또는 newest를 입력해 주세요."})
         ordering = ("created_at", "id") if order == "oldest" else ("-created_at", "-id")
         comments = post.comments.select_related("author").order_by(*ordering)
-        return Response(_CommentSerializer(comments, many=True).data)
+        return Response(CommunityCommentSerializer(comments, many=True).data)
 
+    @extend_schema(
+        request=CommunityCommentWriteSerializer,
+        responses={201: CommunityCommentSerializer, 400: OpenApiTypes.OBJECT, 401: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    )
     @transaction.atomic
     def post(self, request, source_id):
         post = get_object_or_404(CommunityPost.objects.select_for_update(), source_id=source_id)
-        serializer = _ContentSerializer(data=request.data)
+        serializer = CommunityCommentWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         comment = CommunityComment.objects.create(
             post=post, author=request.user, **serializer.validated_data
         )
         CommunityPost.objects.filter(pk=post.pk).update(comment_count=post.comments.count())
-        return Response(_CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
+        return Response(CommunityCommentSerializer(comment).data, status=status.HTTP_201_CREATED)
 
 
 class CommentDetailView(APIView):
@@ -97,15 +85,20 @@ class CommentDetailView(APIView):
             raise PermissionDenied("본인 댓글만 수정하거나 삭제할 수 있습니다.")
         return post, comment
 
+    @extend_schema(
+        request=CommunityCommentWriteSerializer,
+        responses={200: CommunityCommentSerializer, 400: OpenApiTypes.OBJECT, 401: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    )
     @transaction.atomic
     def patch(self, request, comment_id):
         _, comment = self._locked_owned_comment(comment_id, request.user)
-        serializer = _ContentSerializer(data=request.data)
+        serializer = CommunityCommentWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         comment.content = serializer.validated_data["content"]
         comment.save(update_fields=("content", "updated_at"))
-        return Response(_CommentSerializer(comment).data)
+        return Response(CommunityCommentSerializer(comment).data)
 
+    @extend_schema(responses={204: OpenApiResponse(description="본문 없음"), 401: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
     @transaction.atomic
     def delete(self, request, comment_id):
         post, comment = self._locked_owned_comment(comment_id, request.user)
@@ -117,14 +110,19 @@ class CommentDetailView(APIView):
 class VoteView(APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(responses={200: CommunityVoteStateSerializer, 401: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT})
     def get(self, request, source_id):
         post = get_object_or_404(CommunityPost, source_id=source_id)
-        return Response(_vote_response(post, request.user))
+        return Response(CommunityVoteStateSerializer(_vote_response(post, request.user)).data)
 
+    @extend_schema(
+        request=CommunityVoteWriteSerializer,
+        responses={200: CommunityVoteStateSerializer, 400: OpenApiTypes.OBJECT, 401: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    )
     @transaction.atomic
     def post(self, request, source_id):
         post = get_object_or_404(CommunityPost.objects.select_for_update(), source_id=source_id)
-        serializer = _VoteSerializer(data=request.data)
+        serializer = CommunityVoteWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         desired = serializer.validated_data["vote"]
         current = CommunityVote.objects.filter(post=post, user=request.user).first()
@@ -141,15 +139,19 @@ class VoteView(APIView):
 
         counts = _vote_counts(post)
         CommunityPost.objects.filter(pk=post.pk).update(recommendations=counts["recommendations"])
-        return Response({"vote": desired, **counts})
+        return Response(CommunityVoteStateSerializer({"vote": desired, **counts}).data)
 
 
 class ReportCreateView(APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        request=CommunityReportWriteSerializer,
+        responses={200: CommunityReportResultSerializer, 201: CommunityReportResultSerializer, 400: OpenApiTypes.OBJECT, 401: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    )
     def post(self, request, source_id):
         post = get_object_or_404(CommunityPost, source_id=source_id)
-        serializer = _ReportSerializer(data=request.data)
+        serializer = CommunityReportWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         report, created = CommunityReport.objects.get_or_create(
             post=post,
@@ -157,4 +159,5 @@ class ReportCreateView(APIView):
             defaults=serializer.validated_data,
         )
         response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-        return Response({"id": report.id, "created": created}, status=response_status)
+        data = CommunityReportResultSerializer({"id": report.id, "created": created}).data
+        return Response(data, status=response_status)

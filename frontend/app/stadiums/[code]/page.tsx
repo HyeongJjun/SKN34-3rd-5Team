@@ -34,7 +34,7 @@ function Row({ section, row }: { section: SectionName; row: SectionRow }) {
   }
   if (section === "seat-zones") {
     const item = row as SeatZone;
-    return <><strong>{shown(item.zone_name_ko)}</strong><span>{shown(item.level)} · {shown(item.side)} · {shown(item.seat_type)}{item.group_size != null ? ` · ${item.group_size}인` : ""} · 휠체어석 {shownBoolean(item.accessible, "있음", "없음")}</span></>;
+    return <><strong>{shown(item.zone_name_ko)}</strong><span>{shown(item.level)} · {shown(item.side)} · {shown(item.seat_type)}{item.group_size != null ? ` · ${item.group_size}인` : ""} · 휠체어석 {shownBoolean(item.accessible ?? null, "있음", "없음")}</span></>;
   }
   if (section === "seat-maps") {
     const item = row as SeatMap, page = safeUrl(item.page_url);
@@ -50,7 +50,7 @@ function Row({ section, row }: { section: SectionName; row: SectionRow }) {
   }
   if (section === "transports") {
     const item = row as Transport;
-    return <><strong>{shown(item.title)} · {shown(item.mode)}</strong><span>{shown(item.details)}{item.parking_spaces != null ? ` · 주차 ${item.parking_spaces.toLocaleString("ko-KR")}면` : ""} · 예약 {shownBoolean(item.reservation_required, "필요", "불필요")}</span></>;
+    return <><strong>{shown(item.title)} · {shown(item.mode)}</strong><span>{shown(item.details)}{item.parking_spaces != null ? ` · 주차 ${item.parking_spaces.toLocaleString("ko-KR")}면` : ""} · 예약 {shownBoolean(item.reservation_required ?? null, "필요", "불필요")}</span></>;
   }
   if (section === "facilities") {
     const item = row as Facility;

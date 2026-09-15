@@ -1,27 +1,14 @@
 "use client";
 
-import { memberError, memberFetch } from "./member-auth-request";
+import { readApiResponse } from "./api/client";
+import { memberFetch } from "./member-auth-request";
+import type { PredictionGameDto, PredictionTeamDto, PredictionVotesDto } from "./api/content";
 
 export type PredictionChoice = "home" | "away";
 export type PredictionGameStatus = "scheduled" | "live" | "final" | "cancelled" | "postponed" | "suspended" | "unknown";
-export type PredictionTeam = { code: string; name: string; score: number | null };
-export type PredictionVotes = { home: number; away: number; total: number; homePercent: number; awayPercent: number };
-export type PredictionGame = {
-  gameId: string;
-  date: string;
-  startsAt: string | null;
-  stadium: string;
-  away: PredictionTeam;
-  home: PredictionTeam;
-  status: PredictionGameStatus;
-  result: PredictionChoice | "draw" | null;
-  locked: boolean;
-  voided: boolean;
-  stale: boolean;
-  sourceFetchedAt: string;
-  votes: PredictionVotes;
-  myChoice: PredictionChoice | null;
-};
+export type PredictionTeam = PredictionTeamDto;
+export type PredictionVotes = PredictionVotesDto;
+export type PredictionGame = PredictionGameDto;
 
 const statuses = new Set<PredictionGameStatus>(["scheduled", "live", "final", "cancelled", "postponed", "suspended", "unknown"]);
 const teamCodes = new Set(["LG", "HH", "SK", "SS", "NC", "KT", "LT", "HT", "OB", "WO"]);
@@ -49,9 +36,7 @@ function isGame(value: unknown): value is PredictionGame {
 }
 
 async function responseData(response: Response, fallback: string) {
-  const data: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(memberError(data, fallback));
-  return data;
+  return readApiResponse<unknown>(response, fallback);
 }
 
 function read(path: string, authenticated: boolean, signal?: AbortSignal) {

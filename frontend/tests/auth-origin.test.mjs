@@ -29,7 +29,7 @@ for (const name of ["team-backend", "chat/validation", "chat/types"]) {
 }
 const require = createRequire(join(scratch, "test.cjs"));
 const { checkSameOrigin } = require("./team-backend.js");
-const request = (origin, extra = {}, url = "http://0.0.0.0:3000/team-auth/login") => new Request(url, {
+const request = (origin, extra = {}, url = "http://0.0.0.0:3000/member-preview-password") => new Request(url, {
   method: "POST", headers: { ...(origin === undefined ? {} : { origin }), ...extra },
 });
 const status = (value) => (error) => error.status === value;

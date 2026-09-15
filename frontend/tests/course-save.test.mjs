@@ -21,7 +21,7 @@ function apiHarness({ legacy = [], fetched = [], loadFailure = false } = {}) {
   };
   const react = { useEffect() {}, useMemo: callback => callback(), useSyncExternalStore: (_subscribe, snapshot) => snapshot() };
   const browser = { localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) }, addEventListener() {}, removeEventListener() {}, dispatchEvent() {} };
-  const requireDependency = name => name === "./course-api" ? adapter : name === "react" ? react : (() => { throw new Error(`unexpected import: ${name}`); })();
+  const requireDependency = name => name === "./course-api" ? adapter : name === "./client-id" ? { createClientId: () => "11111111-1111-4111-8111-111111111111" } : name === "react" ? react : (() => { throw new Error(`unexpected import: ${name}`); })();
   const testModule = { exports: {} };
   new Function("require", "module", "exports", "window", outputText)(requireDependency, testModule, testModule.exports, browser);
   return { ...testModule.exports, storage, block: () => { blocked = true; }, allow: () => { blocked = false; }, recover: () => { loadFailure = false; }, fetchCount: () => fetchCount };

@@ -1,10 +1,5 @@
-export type MemberUser = {
-  id: number; username: string; email: string; first_name: string; birth_date: string | null; gender: "M" | "F" | null;
-  is_staff: boolean; is_superuser: boolean; is_active: boolean; nickname: string; team_code: string; avatar: string;
-  nickname_changed_at: string | null;
-  notifications: { comments: boolean; courses: boolean; announcements: boolean };
-  visibility: { courses: boolean; posts: boolean; likes: boolean };
-};
+import type { MemberUser } from "./api/auth";
+export type { MemberUser } from "./api/auth";
 export type MemberSnapshot = { status: "anonymous" | "authenticated" | "unavailable"; user: MemberUser | null };
 export const normalizeMemberEmail = (email: string) => email.trim().toLowerCase();
 export const isCurrentMember = (user: Pick<MemberUser, "id"> | null, expectedId: number) => user?.id === expectedId;

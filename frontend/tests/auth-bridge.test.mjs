@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, beforeEach, test } from "node:test";
 import { createRequire } from "node:module";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,42 +10,38 @@ import ts from "typescript";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const scratch = mkdtempSync(join(tmpdir(), "kbo-auth-bridge-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
-for (const name of ["server-only", "next"]) mkdirSync(join(scratch, "node_modules", name), { recursive: true });
-writeFileSync(join(scratch, "node_modules/server-only/index.js"), "module.exports = {};\n");
-writeFileSync(join(scratch, "node_modules/next/headers.js"), `
-const values = new Map();
-const options = new Map();
-exports.values = values;
-exports.options = options;
-exports.cookies = async () => ({
-  get: name => values.has(name) ? { value: values.get(name) } : undefined,
-  has: name => values.has(name),
-  set: (name, value, settings) => { values.set(name, value); options.set(name, settings); },
-  delete: name => values.delete(name),
-});
-`);
-mkdirSync(join(scratch, "chat"));
-for (const name of ["team-backend", "member-auth-request", "chat/validation", "chat/types"]) {
-  const source = readFileSync(join(root, "lib", `${name}.ts`), "utf8");
-  const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } });
-  writeFileSync(join(scratch, `${name}.js`), outputText);
-}
+const source = readFileSync(join(root, "lib/member-auth-request.ts"), "utf8");
+const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } });
+writeFileSync(join(scratch, "member-auth-request.js"), outputText);
 const require = createRequire(join(scratch, "test.cjs"));
 const sessionValues = new Map();
 global.sessionStorage = { getItem: name => sessionValues.get(name) ?? null, setItem: (name, value) => sessionValues.set(name, value), removeItem: name => sessionValues.delete(name) };
-const cookieValues = require("next/headers").values;
-const cookieOptions = require("next/headers").options;
-const { clearTokens, saveTokens, teamRequest } = require("./team-backend.js");
 const { clearMemberTokens, createMemberRequestGate, isCurrentMember, loadLatestMember, logoutMember, memberFetch, normalizeMemberEmail, saveMemberTokens } = require("./member-auth-request.js");
-beforeEach(() => { cookieValues.clear(); cookieOptions.clear(); delete process.env.AUTH_COOKIE_SECURE; clearMemberTokens(); process.env.CHAT_BACKEND_URL = "http://backend:8000/"; });
+beforeEach(() => clearMemberTokens());
 
 test("auth callers use the backend-shaped public paths", () => {
-  const sources = ["app/login/page.tsx", "app/signup/page.tsx", "app/mypage/page.tsx", "components/member-account-settings.tsx", "components/member-header-actions.tsx", "lib/member-auth-request.ts"].map(name => readFileSync(join(root, name), "utf8")).join("\n");
+  const sources = ["app/login/page.tsx", "app/signup/page.tsx", "app/mypage/page.tsx", "components/member-account-settings.tsx", "components/member-header-actions.tsx", "lib/member-auth-request.ts", "lib/api/auth.ts"].map(name => readFileSync(join(root, name), "utf8")).join("\n");
   for (const path of ["/api/auth/signin", "/api/auth/signup/", "/api/auth/user", "/api/auth/logout", "/api/auth/username/request", "/api/auth/password/request", "/api/auth/password", "/api/auth/email/request", "/api/auth/email/verify"]) assert.match(sources, new RegExp(path.replaceAll("/", "\\/")));
   assert.doesNotMatch(sources, /\/team-auth\//);
   assert.match(sources, /\/api\/auth\/token\/refresh\//);
   assert.match(readFileSync(join(root, "app/signup/page.tsx"), "utf8"), /re_password: values\.passwordConfirm/);
   assert.doesNotMatch(readFileSync(join(root, "lib/member-auth-request.ts"), "utf8"), /localStorage/);
+});
+
+test("member admin uses direct Bearer APIs and generated DTOs", () => {
+  const page = readFileSync(join(root, "app/admin/page.tsx"), "utf8");
+  const api = readFileSync(join(root, "lib/api/auth.ts"), "utf8");
+  assert.match(page, /Promise\.all\(\[getMemberUser\([^)]*\), listAdminMembers\(/);
+  assert.match(api, /components\["schemas"\]\["MemberUser"\]/);
+  assert.match(api, /components\["schemas"\]\["AdminMember"\]/);
+  assert.match(api, /\/api\/auth\/admin\/members\//);
+  assert.match(api, /memberFetch/);
+  assert.doesNotMatch(page, /\/admin-api/);
+});
+
+test("current roles and staff navigation come from authoritative identity", () => {
+  assert.match(readFileSync(join(root, "app/mypage/page.tsx"), "utf8"), /memberRoleLabel\(user\)/);
+  assert.match(readFileSync(join(root, "components/member-header-actions.tsx"), "utf8"), /user\.is_staff && <Link href="\/admin"/);
 });
 
 test("nginx sends every API path directly to Django", () => {
@@ -133,57 +129,16 @@ test("logout sends the refresh token to Django then clears tab storage", async (
   assert.equal(sessionStorage.getItem("kbo_refresh"), null);
 });
 
-test("empty 201 and 204 backend successes are valid", async () => {
-  global.fetch = async () => new Response(null, { status: 201 });
-  assert.equal(await teamRequest("auth/signup/", {}, false), null);
-  global.fetch = async () => new Response(null, { status: 204 });
-  assert.equal(await teamRequest("auth/logout", {}, false), null);
-});
-
-test("DRF field errors retain status and safe fields", async () => {
-  global.fetch = async () => Response.json({ username: ["이미 사용 중입니다."] }, { status: 400 });
-  await assert.rejects(teamRequest("auth/signup/", {}, false), error => error.status === 400 && error.fields.username[0] === "이미 사용 중입니다.");
-});
-
-test("logout marker blocks a late refreshed access cookie until a real login", async () => {
-  await clearTokens();
-  cookieValues.set("kbo_access", "late-access");
-  let called = false;
-  global.fetch = async () => { called = true; return Response.json({}); };
-  await assert.rejects(teamRequest("auth/user", undefined, true, undefined, "GET"), error => error.status === 401);
-  assert.equal(called, false);
-  await saveTokens("new-access", "new-refresh", true);
-  assert.equal(cookieValues.has("kbo_logged_out"), false);
-});
-
-test("auth cookies allow HTTP only through the explicit server setting", async () => {
-  process.env.AUTH_COOKIE_SECURE = "false";
-  await saveTokens("access", "refresh");
-  assert.equal(cookieOptions.get("kbo_access").secure, false);
-  process.env.AUTH_COOKIE_SECURE = "true";
-  await clearTokens();
-  assert.equal(cookieOptions.get("kbo_logged_out").secure, true);
-  process.env.AUTH_COOKIE_SECURE = "invalid";
-  await saveTokens("access");
-  assert.equal(cookieOptions.get("kbo_access").secure, process.env.NODE_ENV === "production");
-});
-
-test("an in-flight refresh finishing after logout preserves the logout marker", async () => {
-  cookieValues.set("kbo_refresh", "refresh-token");
-  let finishRefresh;
-  const refreshResponse = new Promise(resolve => { finishRefresh = resolve; });
-  let calls = 0;
-  global.fetch = async () => {
-    calls += 1;
-    if (calls === 1) return refreshResponse;
-    return Response.json({ id: 1 });
-  };
-  const pending = teamRequest("auth/user", undefined, true, undefined, "GET");
-  await new Promise(resolve => setTimeout(resolve));
-  await clearTokens();
-  finishRefresh(Response.json({ access: "late-access", refresh: "late-refresh" }));
-  await pending;
-  assert.equal(cookieValues.has("kbo_logged_out"), true);
+test("frontend runtime has no authentication cookie path", () => {
+  const files = [];
+  const visit = directory => readdirSync(directory).forEach(name => {
+    const path = join(directory, name);
+    if (statSync(path).isDirectory()) visit(path);
+    else if (/\.(?:ts|tsx|js|mjs)$/.test(name)) files.push(path);
+  });
+  for (const directory of [join(root, "app"), join(root, "components"), join(root, "lib")]) visit(directory);
+  const runtime = files.map(path => readFileSync(path, "utf8")).join("\n");
+  assert.doesNotMatch(runtime, /document\.cookie|cookies\(\)|kbo_access|kbo_logged_out|AUTH_COOKIE_SECURE|credentials:\s*["'](?:include|same-origin)["']/);
 });
 
 test("a delayed identity response cannot overwrite an explicit anonymous state", async () => {

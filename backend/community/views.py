@@ -1,12 +1,13 @@
 from django.db import DataError, IntegrityError, transaction
 from django.db.models import Count, F, Q
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema, extend_schema_view
 from rest_framework import generics, status
 from rest_framework.exceptions import NotAuthenticated, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .models import CommunityPost, TEAM_CODES
-from .serializers import CommunityPostSerializer
+from .serializers import CommunityPostPatchSerializer, CommunityPostSerializer, CommunityPostWriteSerializer
 
 
 POST_INPUT_FIELDS = ("board", "team_code", "category", "title", "content")
@@ -24,6 +25,21 @@ def same_submission(post, validated_data):
     return all(getattr(post, field) == validated_data[field] for field in POST_INPUT_FIELDS)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        parameters=[
+            OpenApiParameter("board", OpenApiTypes.STR, enum=("free", "teams")),
+            OpenApiParameter("team", OpenApiTypes.STR),
+            OpenApiParameter("mine", OpenApiTypes.STR, enum=("1",)),
+        ],
+        responses={200: CommunityPostSerializer(many=True), 400: OpenApiTypes.OBJECT, 401: OpenApiTypes.OBJECT},
+    ),
+    post=extend_schema(
+        request=CommunityPostWriteSerializer,
+        parameters=[OpenApiParameter("Idempotency-Key", OpenApiTypes.STR, OpenApiParameter.HEADER, required=True)],
+        responses={200: CommunityPostSerializer, 201: CommunityPostSerializer, 400: OpenApiTypes.OBJECT, 401: OpenApiTypes.OBJECT, 409: OpenApiTypes.OBJECT},
+    ),
+)
 class CommunityPostListCreateView(generics.ListCreateAPIView):
     serializer_class = CommunityPostSerializer
     permission_classes = (AllowAny,)
@@ -90,6 +106,14 @@ class CommunityPostListCreateView(generics.ListCreateAPIView):
         return Response(self.get_serializer(post).data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema_view(
+    get=extend_schema(responses={200: CommunityPostSerializer, 404: OpenApiTypes.OBJECT}),
+    patch=extend_schema(
+        request=CommunityPostPatchSerializer,
+        responses={200: CommunityPostSerializer, 400: OpenApiTypes.OBJECT, 401: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    ),
+    delete=extend_schema(responses={204: OpenApiResponse(description="본문 없음"), 401: OpenApiTypes.OBJECT, 403: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT}),
+)
 class CommunityPostDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CommunityPostSerializer
     lookup_field = "source_id"

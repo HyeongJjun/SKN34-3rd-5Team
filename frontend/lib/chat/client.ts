@@ -2,6 +2,14 @@ import { memberError, memberFetch } from "../member-auth-request";
 import { isRecord, parseChatRequest } from "./validation";
 import type { ChatReply, ChatRequest, ChatStatus } from "./types";
 import { MAX_REPLY_LENGTH } from "./types";
+import type {
+  ChatCourseMetadataDto,
+  ChatFinalizeResponseDto,
+  ChatMessageDto,
+  ChatNonStreamResponseDto,
+  ChatSessionDto,
+  GuestChatDoneEventDto,
+} from "./wire";
 
 const REQUEST_TIMEOUT_MS = 55_000;
 const MEMBER_STATUS: ChatStatus = { provider: "backend", model: "팀 챗봇", ready: true };
@@ -84,6 +92,14 @@ function parseCheckpoint(value: Record<string, unknown>, prefix: string, turnId?
   return { turnId: value.turn_id, receipt: value.receipt, prefix };
 }
 
+function courseMetadata(value: Record<string, unknown>): ChatCourseMetadataDto {
+  return {
+    ...(Array.isArray(value.places) ? { places: value.places } : {}),
+    ...(value.coursePayload === null || isRecord(value.coursePayload) ? { coursePayload: value.coursePayload } : {}),
+    ...(typeof value.route === "string" ? { route: value.route } : {}),
+  } as ChatCourseMetadataDto;
+}
+
 async function finalizeMemberTurn(sessionId: number, checkpoint: ChatCheckpoint, status: "completed" | "stopped", callbacks: ChatStreamCallbacks) {
   if (callbacks.isCurrent && !callbacks.isCurrent()) throw new ChatClientError("계정이 변경되어 저장을 중단했어요.", 409);
   const value = await memberRequest(`/api/chat/turns/${checkpoint.turnId}/finalize/`, {
@@ -97,14 +113,15 @@ async function finalizeMemberTurn(sessionId: number, checkpoint: ChatCheckpoint,
       typeof value.assistant_message !== "string") {
     throw new ChatClientError("저장 확인 응답이 올바르지 않아요.", 502, true, sessionId);
   }
+  const finalized = value as ChatFinalizeResponseDto;
   return {
     ...MEMBER_STATUS,
     sessionId,
-    reply: value.assistant_message,
-    completionStatus: value.status,
+    reply: finalized.assistant_message,
+    completionStatus: finalized.status,
     turnId: checkpoint.turnId,
-    userMessageId: value.user_message_id,
-    assistantMessageId: value.assistant_message_id,
+    userMessageId: finalized.user_message_id,
+    assistantMessageId: finalized.assistant_message_id,
   } satisfies ChatReply;
 }
 
@@ -113,7 +130,7 @@ async function readMemberStream(response: Response, sessionId: number, callbacks
     throw new ChatClientError("스트림 응답을 확인하지 못했어요.", 502, true, sessionId);
   }
   const reader = response.body.getReader(), decoder = new TextDecoder();
-  let buffer = "", answer = "", checkpoint: ChatCheckpoint | null = null, done = false;
+  let buffer = "", answer = "", checkpoint: ChatCheckpoint | null = null, done = false, metadata: ChatCourseMetadataDto = {};
   const consume = (frame: string) => {
     const [eventLine, ...lines] = frame.split(/\r?\n/);
     const event = eventLine?.startsWith("event:") ? eventLine.slice(6).trim() : "";
@@ -144,6 +161,7 @@ async function readMemberStream(response: Response, sessionId: number, callbacks
     if (event === "done") {
       if (!checkpoint || !answer.trim()) throw new ChatClientError("최종 답변을 확인하지 못했어요.", 502, true, sessionId);
       checkpoint = parseCheckpoint(value, answer, checkpoint.turnId);
+      metadata = courseMetadata(value);
       callbacks.onCheckpoint?.(checkpoint);
       done = true;
       return;
@@ -169,7 +187,7 @@ async function readMemberStream(response: Response, sessionId: number, callbacks
     let result = await finalizeMemberTurn(sessionId, stopped ?? checkpoint, stopped ? "stopped" : "completed", callbacks);
     const racedStop = callbacks.getStop?.();
     if (result.completionStatus === "completed" && racedStop) result = await finalizeMemberTurn(sessionId, racedStop, "stopped", callbacks);
-    return result;
+    return { ...result, ...metadata };
   } catch (error) {
     const stopped = callbacks.getStop?.();
     if (stopped) return finalizeMemberTurn(sessionId, stopped, "stopped", callbacks);
@@ -182,7 +200,7 @@ async function readGuestStream(response: Response, callbacks: ChatStreamCallback
     throw new ChatClientError("스트림 응답을 확인하지 못했어요.", 502);
   }
   const reader = response.body.getReader(), decoder = new TextDecoder();
-  let buffer = "", answer = "", done = false;
+  let buffer = "", answer = "", done = false, metadata: ChatCourseMetadataDto = {};
   callbacks.onCheckpoint?.({ turnId: "guest", receipt: "", prefix: "" });
   const consume = (frame: string) => {
     const [eventLine, ...lines] = frame.split(/\r?\n/), event = eventLine?.slice(6).trim();
@@ -199,6 +217,7 @@ async function readGuestStream(response: Response, callbacks: ChatStreamCallback
     }
     if (event === "done") {
       if (!answer.trim() || value.assistant_message !== answer) throw new ChatClientError("최종 답변을 확인하지 못했어요.", 502);
+      metadata = courseMetadata(value as GuestChatDoneEventDto & Record<string, unknown>);
       done = true; return;
     }
     if (event === "error") throw new ChatClientError(typeof value.detail === "string" && value.detail.length <= 200 ? value.detail : fallback(502), 502);
@@ -218,7 +237,7 @@ async function readGuestStream(response: Response, callbacks: ChatStreamCallback
     }
     if (!done || buffer.trim()) throw new ChatClientError("답변 완료를 확인하지 못했어요.", 502);
     const stop = callbacks.getStop?.();
-    return { ...GUEST_STATUS, reply: stop ? (stop.prefix.trim() ? stop.prefix : "") : answer, completionStatus: stop ? "stopped" : "completed" };
+    return { ...GUEST_STATUS, ...metadata, reply: stop ? (stop.prefix.trim() ? stop.prefix : "") : answer, completionStatus: stop ? "stopped" : "completed" };
   } catch (error) {
     const stop = callbacks.getStop?.();
     if (stop) return { ...GUEST_STATUS, reply: stop.prefix.trim() ? stop.prefix : "", completionStatus: "stopped" };
@@ -226,9 +245,55 @@ async function readGuestStream(response: Response, callbacks: ChatStreamCallback
   } finally { await reader.cancel().catch(() => undefined); }
 }
 
-export async function getChatStatus(signal?: AbortSignal): Promise<ChatStatus> {
+export async function listChatSessions(signal?: AbortSignal): Promise<ChatSessionDto[]> {
   const sessions = await memberRequest("/api/chat/sessions/", { method: "GET" }, signal, readJson);
-  if (!Array.isArray(sessions)) throw new ChatClientError("채팅방 목록 응답을 확인하지 못했어요.", 502);
+  if (!Array.isArray(sessions) || sessions.some(item => !isRecord(item) || !Number.isSafeInteger(item.id) || typeof item.title !== "string")) {
+    throw new ChatClientError("채팅방 목록 응답을 확인하지 못했어요.", 502);
+  }
+  return sessions as ChatSessionDto[];
+}
+
+export async function createChatSession(title: string, signal?: AbortSignal): Promise<ChatSessionDto> {
+  const room = await memberRequest("/api/chat/sessions/", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }),
+  }, signal, readJson);
+  if (!isRecord(room) || !Number.isSafeInteger(room.id) || Number(room.id) < 1 || typeof room.title !== "string") {
+    throw new ChatClientError("채팅방 생성 응답을 확인하지 못했어요.", 502);
+  }
+  return room as ChatSessionDto;
+}
+
+export async function renameChatSession(sessionId: number, title: string, signal?: AbortSignal): Promise<ChatSessionDto> {
+  const room = await memberRequest(`/api/chat/sessions/${sessionId}/`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }),
+  }, signal, readJson);
+  if (!isRecord(room) || room.id !== sessionId || typeof room.title !== "string") throw new ChatClientError("채팅방 수정 응답을 확인하지 못했어요.", 502, true, sessionId);
+  return room as ChatSessionDto;
+}
+
+export async function deleteChatSession(sessionId: number, signal?: AbortSignal): Promise<void> {
+  const result = await memberRequest(`/api/chat/sessions/${sessionId}/`, { method: "DELETE" }, signal, readJson);
+  if (result !== null) throw new ChatClientError("채팅방 삭제 응답을 확인하지 못했어요.", 502, true, sessionId);
+}
+
+export async function fetchChatHistory(sessionId: number, signal?: AbortSignal): Promise<ChatMessageDto[]> {
+  const messages = await memberRequest(`/api/chat/sessions/${sessionId}/messages/`, { method: "GET" }, signal, readJson);
+  if (!Array.isArray(messages) || messages.some(item => !isRecord(item) || typeof item.content !== "string")) throw new ChatClientError("대화 기록 응답을 확인하지 못했어요.", 502, false, sessionId);
+  return messages as ChatMessageDto[];
+}
+
+export async function sendNonStreamChatMessage(sessionId: number, content: string, signal?: AbortSignal): Promise<ChatNonStreamResponseDto> {
+  const result = await memberRequest(`/api/chat/sessions/${sessionId}/messages/`, {
+    method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ content }),
+  }, signal, readJson);
+  if (!isRecord(result) || result.session_id !== sessionId || result.status !== "completed" || typeof result.assistant_message !== "string") {
+    throw new ChatClientError("채팅 응답을 확인하지 못했어요.", 502, true, sessionId);
+  }
+  return result as ChatNonStreamResponseDto;
+}
+
+export async function getChatStatus(signal?: AbortSignal): Promise<ChatStatus> {
+  await listChatSessions(signal);
   return MEMBER_STATUS;
 }
 
@@ -236,11 +301,7 @@ export async function sendChatMessage(body: ChatRequest, signal?: AbortSignal, c
   const input = parseChatRequest(body), question = input.messages.at(-1)!.content;
   let sessionId = input.sessionId;
   if (!sessionId) {
-    const room = await memberRequest("/api/chat/sessions/", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: question.slice(0, 80) }),
-    }, signal, readJson);
-    if (!isRecord(room) || !Number.isSafeInteger(room.id) || Number(room.id) < 1) throw new ChatClientError("채팅방 생성 응답을 확인하지 못했어요.", 502);
-    sessionId = room.id as number;
+    sessionId = (await createChatSession(question.slice(0, 80), signal)).id;
   }
   const content = `${input.context?.stadium ? `[선택한 구장: ${input.context.stadium}]\n` : ""}${question}`;
   try {

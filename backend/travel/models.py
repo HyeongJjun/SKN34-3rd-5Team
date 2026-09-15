@@ -1,12 +1,21 @@
 import uuid
 
+from django.conf import settings
+from django.db import connection
 from django.db import models
 from django.db.models import Q
+
+
+def next_route_number():
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT nextval('travel_route_number_seq')")
+        return f"{cursor.fetchone()[0]:06d}"
 
 
 class Course(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     source_id = models.CharField(max_length=80, null=True, blank=True, unique=True)
+    route_number = models.CharField(max_length=6, unique=True, default=next_route_number, editable=False)
     title = models.CharField(max_length=80)
     stadium = models.CharField(max_length=120)
     description = models.TextField(blank=True)
@@ -57,4 +66,24 @@ class CourseStop(models.Model):
             models.UniqueConstraint(fields=("course", "position"), name="unique_course_stop_position"),
             models.CheckConstraint(condition=Q(lat__range=(-90, 90)), name="course_stop_lat_bounds"),
             models.CheckConstraint(condition=Q(lng__range=(-180, 180)), name="course_stop_lng_bounds"),
+        )
+
+
+class CourseReaction(models.Model):
+    course = models.ForeignKey(Course, related_name="reactions", on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="course_reactions", on_delete=models.CASCADE)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(fields=("course", "user"), name="course_reaction_user_unique"),
+        )
+
+
+class CourseView(models.Model):
+    course = models.ForeignKey(Course, related_name="viewer_records", on_delete=models.CASCADE)
+    actor_digest = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(fields=("course", "actor_digest"), name="course_view_actor_unique"),
         )
