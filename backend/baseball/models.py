@@ -8,6 +8,10 @@ class Team(models.Model):
     id = models.IntegerField(primary_key=True)
     team_code = models.TextField(unique=True)
     team_name_ko = models.TextField()
+    source = models.CharField(max_length=16, default="csv")
+    source_fetched_at = models.DateTimeField(null=True, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "TEAM"
@@ -130,6 +134,19 @@ class Game(models.Model):
     status_code = models.TextField()
     game_type = models.TextField()
     collected_at = models.DateTimeField()
+    source = models.CharField(max_length=16, default="csv")
+    source_external_code = models.CharField(max_length=60, unique=True, null=True, blank=True)
+    source_stadium_name = models.CharField(max_length=60, blank=True)
+    source_status_label = models.CharField(max_length=30, blank=True)
+    source_home_code = models.CharField(max_length=2, blank=True)
+    source_home_name = models.CharField(max_length=30, blank=True)
+    source_away_code = models.CharField(max_length=2, blank=True)
+    source_away_name = models.CharField(max_length=30, blank=True)
+    source_fetched_at = models.DateTimeField(null=True, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    home_starting_pitcher = models.CharField(max_length=60, null=True, blank=True)
+    away_starting_pitcher = models.CharField(max_length=60, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "GAME"
@@ -157,6 +174,16 @@ class StandingHistory(models.Model):
     games_behind = models.DecimalField(max_digits=8, decimal_places=2)
 
     collected_at = models.DateTimeField()
+    played = models.PositiveSmallIntegerField(null=True, blank=True)
+    win_rate = models.CharField(max_length=24, blank=True)
+    winning_streak = models.CharField(max_length=20, blank=True)
+    batting_average = models.CharField(max_length=24, blank=True)
+    era = models.CharField(max_length=24, blank=True)
+    last_ten = models.CharField(max_length=30, blank=True)
+    source = models.CharField(max_length=16, default="csv")
+    source_fetched_at = models.DateTimeField(null=True, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "STANDING_HISTORY"

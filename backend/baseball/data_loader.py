@@ -138,8 +138,23 @@ class BaseballDataLoaderV1:
         pk = stable_id(model, key)
         natural = {name: values[name] for name in NATURAL_FIELDS.get(model.__name__, ())}
         manager = model.objects.using(self.alias)
+        field_names = {field.name for field in model._meta.fields}
+        if model.__name__ == "Game" and "source" in field_names:
+            matches = manager.filter(
+                game_date=values["game_date"], game_time=values["game_time"],
+                home_team=values["home_team"], away_team=values["away_team"],
+            )
+            protected = matches.filter(source="tving")
+            if protected.count() > 1:
+                raise CommandError(f"ambiguous TVING game identity for CSV row: {key}")
+            if protected.exists():
+                self.counts["Game.tving_skipped"] += 1
+                return protected.get()
         existing = manager.filter(**natural).first() if natural else None
         if existing:
+            if "source" in field_names and getattr(existing, "source", "csv") == "tving":
+                self.counts[f"{model.__name__}.tving_skipped"] += 1
+                return existing
             self.counts[f"{model.__name__}.skipped"] += 1
             return existing
         occupant = manager.filter(pk=pk).first()
