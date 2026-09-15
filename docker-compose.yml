@@ -29,6 +29,8 @@ services:
 
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CHAT_CHECKPOINT_SIGNING_KEY: ${CHAT_CHECKPOINT_SIGNING_KEY:?Set CHAT_CHECKPOINT_SIGNING_KEY}
+      CHAT_TRUST_PROXY_HEADERS: "true"
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
       AUTH_FRONTEND_ORIGIN: ${AUTH_FRONTEND_ORIGIN:-http://127.0.0.1:80}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
@@ -38,6 +40,7 @@ services:
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
       EMAIL_USE_TLS: ${EMAIL_USE_TLS:-false}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-}
+      DEMO_USERS_ENABLED: ${DEMO_USERS_ENABLED:-false}
 
       # Docker 내부에서는 db 서비스명으로 접근
       DB_HOST: db
@@ -45,11 +48,13 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
-      DJANGO_BOOTSTRAP_ADMIN_USERNAME: ${DJANGO_BOOTSTRAP_ADMIN_USERNAME:-}
-      DJANGO_BOOTSTRAP_ADMIN_PASSWORD_HASH_B64: ${DJANGO_BOOTSTRAP_ADMIN_PASSWORD_HASH_B64:-}
-      DJANGO_DEBUG: ${DJANGO_DEBUG:-true}
-      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost}
+      BASEBALL_DB_USER: ${BASEBALL_DB_USER:-}
+      BASEBALL_DB_PASSWORD: ${BASEBALL_DB_PASSWORD:-}
+      BASEBALL_QUERY_MAX_ROWS: ${BASEBALL_QUERY_MAX_ROWS:-200}
+      BASEBALL_QUERY_TIMEOUT_MS: ${BASEBALL_QUERY_TIMEOUT_MS:-3000}
+      BASEBALL_QUERY_LOCK_TIMEOUT_MS: ${BASEBALL_QUERY_LOCK_TIMEOUT_MS:-1000}
+      BASEBALL_QUERY_MAX_SQL_BYTES: ${BASEBALL_QUERY_MAX_SQL_BYTES:-32768}
+      BASEBALL_QUERY_MAX_RESPONSE_BYTES: ${BASEBALL_QUERY_MAX_RESPONSE_BYTES:-1048576}
 
     volumes:
       - ./backend:/app
@@ -68,7 +73,7 @@ services:
 
     command: >
       sh -c "python manage.py migrate &&
-             python manage.py bootstrap_admin &&
+             python manage.py provision_baseball_reader --prepare-db-permissions &&
              python manage.py runserver 0.0.0.0:8000"
 
 
@@ -91,24 +96,11 @@ services:
       - backend
 
     environment:
-      # General team RAG uses authenticated chat session endpoints below this base.
-      TEAM_BACKEND_URL: http://backend:8000/
-      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-auto}
-      NEXT_PUBLIC_MEMBER_PREVIEW: ${NEXT_PUBLIC_MEMBER_PREVIEW:-false}
-      MEMBER_PREVIEW_USERNAME: ${MEMBER_PREVIEW_USERNAME:-}
-      MEMBER_PREVIEW_PASSWORD: ${MEMBER_PREVIEW_PASSWORD:-}
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-}
       NEXT_PUBLIC_KAKAO_MAP_KEY: ${NEXT_PUBLIC_KAKAO_MAP_KEY:-}
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-}
       TOUR_API_KEY: ${TOUR_API_KEY:-}
-      KTO_TOUR_APT_KEY: ${KTO_TOUR_APT_KEY:-}
-      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
-      KMA_SERVICE_KEY: ${KMA_SERVICE_KEY:-}
-      KMA_API_KEY: ${KMA_API_KEY:-}
-      CHAT_PROVIDER: ${CHAT_PROVIDER:-openai}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      NEXT_PUBLIC_CKEDITOR_LICENSE_KEY: ${NEXT_PUBLIC_CKEDITOR_LICENSE_KEY:-}
 
 
   # ========================

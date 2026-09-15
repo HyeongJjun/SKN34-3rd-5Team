@@ -43,6 +43,7 @@ const jsonResponse = (value, status = 200) => new Response(JSON.stringify(value)
 });
 const unexpectedFetch = async () => { assert.fail("This case must not call fetch"); };
 const chatError = (status) => (error) => error instanceof ChatError && error.status === status;
+
 test("request parsing trims content and removes untrusted model/system/options fields", () => {
   const result = parseChatRequest({
     messages: [{ role: "user", content: "  질문  ", model: "injected", name: "system" }],
@@ -214,7 +215,7 @@ test("invalid JSON and network exceptions expose no upstream details", async () 
 test("backend adapter forwards the same request contract without OpenAI credentials", async () => {
   const request = { ...question, context: { stadium: "고척", intent: "route" } };
   const result = await createChatReply(request, {
-    env: { ...openaiEnv, CHAT_PROVIDER: "backend", TEAM_BACKEND_URL: "http://backend:8000/api/chat/" },
+    env: { ...openaiEnv, CHAT_PROVIDER: "backend", CHAT_BACKEND_URL: "http://backend:8000/api/chat/" },
     fetcher: async (url, init) => {
       assert.equal(url, "http://backend:8000/api/chat/");
       assert.equal(init.headers.Authorization, undefined);
@@ -228,7 +229,7 @@ test("backend adapter forwards the same request contract without OpenAI credenti
 test("backend rejects missing or unsafe endpoint configurations before fetching", async () => {
   for (const url of [undefined, "", "file:///private", "not a URL", "https://user:pass@example.test/chat"]) {
     await assert.rejects(createChatReply(question, {
-      env: { CHAT_PROVIDER: "backend", TEAM_BACKEND_URL: url }, fetcher: unexpectedFetch,
+      env: { CHAT_PROVIDER: "backend", CHAT_BACKEND_URL: url }, fetcher: unexpectedFetch,
     }), chatError(503));
   }
 });
@@ -236,7 +237,7 @@ test("backend rejects missing or unsafe endpoint configurations before fetching"
 test("backend rejects malformed replies", async () => {
   for (const body of [null, {}, { reply: 42 }, { reply: " " }, { reply: "x".repeat(MAX_REPLY_LENGTH + 1) }]) {
     await assert.rejects(createChatReply(question, {
-      env: { CHAT_PROVIDER: "backend", TEAM_BACKEND_URL: "http://backend:8000/api/chat/" },
+      env: { CHAT_PROVIDER: "backend", CHAT_BACKEND_URL: "http://backend:8000/api/chat/" },
       fetcher: async () => jsonResponse(body),
     }), chatError(502));
   }

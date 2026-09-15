@@ -1,6 +1,6 @@
 # 프론트엔드 → 백엔드 연동 인계서
 
-작성 기준: 2026-09-14, `feat/copy-route-all-categories` 브랜치
+작성 기준: 2026-09-10, `feat/front` 브랜치
 
 이 문서는 현재 프론트엔드 프로토타입을 Django·PostgreSQL 백엔드와 연결할 때 필요한 계약과 작업 순서를 정리한다. 화면 디자인과 사용자 흐름은 구현되어 있지만 회원, 게시글, 좋아요, 조회 수, 커뮤니티는 아직 실제 서버에 저장되지 않는다.
 
@@ -12,7 +12,7 @@
 | 루트 작성·목록·상세 | 브라우저 `localStorage`에 저장 | 게시글 CRUD, 작성자 권한, 페이지네이션 필요 |
 | 좋아요·조회 수 | 브라우저별 임시 집계 | 사용자 기준 좋아요와 서버 조회 수 필요 |
 | 팀별 자유게시판 | 샘플 글만 표시 | 팀 게시판 글·댓글 API 필요 |
-| 챗봇 | 인증된 팀 세션 API 또는 OpenAI로 전달 | 팀 세션·메시지 계약 유지, 답변 검증 필요 |
+| 챗봇 | Next 서버에서 데모/OpenAI/팀 백엔드로 전환 가능 | `POST /api/chat/` 계약만 맞추면 즉시 연결 가능 |
 | 경기·팀 순위·개인 순위 | Next 서버가 TVING 데이터를 수집하고 로컬 JSON에 저장 | 운영 배포 전 단일 수집 워커와 공용 DB로 이전 권장 |
 | 구단·선수 상세 | 팀 10개·선수 556명 수집 완료, 로컬 JSON 사용 | DB 적재 및 조회 API 필요 |
 | KBO 하이라이트 | Next 서버가 YouTube Data API로 조회 | 현재 유지 가능, 필요하면 백엔드 캐시로 이전 |
@@ -61,14 +61,12 @@ Nginx는 `/api/` 요청을 Django로, 그 외 요청을 Next.js로 전달한다.
 fetch("/api/routes/")
 ```
 
-Docker 컨테이너 안에서 Next 서버가 Django를 직접 호출할 때만 `http://backend:8000/...` 주소를 사용한다. 현재 Compose는 팀 챗봇과 회원·관리자 요청의 공통 Django 기본 주소를 다음처럼 전달한다.
+Docker 컨테이너 안에서 Next 서버가 Django를 직접 호출할 때만 `http://backend:8000/...` 주소를 사용한다. 예를 들어 현재 챗봇 중계 설정은 다음과 같다.
 
 ```dotenv
 CHAT_PROVIDER=backend
-TEAM_BACKEND_URL=http://backend:8000/
+CHAT_BACKEND_URL=http://backend:8000/api/chat/
 ```
-
-로컬에서 Next를 직접 실행할 때는 `frontend/.env.local`의 `TEAM_BACKEND_URL=http://localhost:8000/`을 사용한다. `ready`는 일반 채팅 제공자의 설정 상태이며, 팀 백엔드 모드에서는 이 기본 주소의 존재 여부만 확인한다.
 
 같은 Nginx 도메인에서 Django 세션 쿠키를 쓰면 별도 CORS 설정을 최소화할 수 있다. 운영에서는 프록시 헤더, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, HTTPS 쿠키 설정을 실제 도메인에 맞춰야 한다.
 
@@ -298,11 +296,10 @@ GET /api/community/preview/?team_codes=SS,KT,LG,HT,OB,NC&limit=5
 
 ## 7. 챗봇 연동 계약
 
-프론트 브라우저는 `/chat-api`만 호출한다. Next 서버는 `CHAT_PROVIDER=backend`일 때 HttpOnly 쿠키의 액세스 토큰을 사용하고, 필요하면 리프레시 토큰으로 갱신한 뒤 아래 팀 세션 API를 호출한다. 따라서 현재 팀 RAG 연결은 로그인한 사용자 세션을 전제로 한다.
+프론트 브라우저는 `/chat-api`만 호출한다. Next 서버가 `CHAT_PROVIDER` 값에 따라 데모, OpenAI, 팀 백엔드 중 하나로 전달한다. 팀 백엔드가 아래 계약을 구현하면 프론트 UI를 바꾸지 않고 연결할 수 있다.
 
 ```text
-POST /chat/sessions/
-Authorization: Bearer {access token}
+POST /api/chat/
 Content-Type: application/json
 ```
 
@@ -310,27 +307,23 @@ Content-Type: application/json
 
 ```json
 {
-  "title": "첫 질문의 앞 80자"
+  "messages": [
+    { "role": "user", "content": "잠실 첫 직관 코스를 추천해 줘" }
+  ],
+  "context": {
+    "stadium": "잠실야구장",
+    "intent": "route"
+  }
 }
 ```
 
-응답의 양의 정수 `id`를 대화별 세션 ID로 보관한 뒤 메시지를 전송한다.
-
-```text
-POST /chat/sessions/{session_id}/messages/
-Authorization: Bearer {access token}
-Content-Type: application/json
-```
-
-요청:
+응답:
 
 ```json
 {
-  "content": "[선택한 구장: 잠실야구장]\n질문 내용"
+  "reply": "잠실야구장에 가기 전 석촌호수를 산책해 보세요."
 }
 ```
-
-응답에는 비어 있지 않은 `assistant_message` 문자열이 필요하다. Next는 이를 브라우저 계약의 `reply`로 변환하고 `sessionId`를 함께 반환한다. 새 대화를 시작하거나 대화를 바꾸면 별도 세션 ID를 사용한다.
 
 검증 제한:
 
@@ -340,13 +333,11 @@ Content-Type: application/json
 - 요청 본문 최대 64KB
 - 마지막 메시지는 반드시 `user`
 - `intent`: `route`, `baseball`, `stadium` 중 하나
-- OpenAI 일반 답변 제한 25초, 브라우저 전체 제한 30초. 팀 세션 요청은 브라우저 취소 신호를 전달하며 백엔드 중계의 기본 제한은 40초
+- 공급자 호출 제한 25초, 브라우저 전체 제한 30초
 
 현재는 SSE 스트리밍을 사용하지 않는 단일 JSON 응답 방식이다. 첫 연동은 이 계약으로 완료하고, SSE를 추가할 때 프론트 전송·중단 처리와 백엔드 스트림 형식을 함께 변경한다.
 
-현재 Next의 제한은 프로세스당 분당 20건, 동시 3건인 로컬 보호 장치다. 운영 백엔드는 로그인 사용자와 IP 기준 제한을 공용 저장소에서 적용해야 한다. 화면의 대화 목록은 React 상태지만 팀 백엔드 모드에서는 질문과 답변이 현재 세션 API에도 저장된다. 새로고침 뒤 계정별 기록을 복원하려면 세션·메시지 조회 API를 화면 상태와 연결해야 한다.
-
-`GET /chat-api`의 `ready`는 채팅 제공자의 설정 여부만 뜻한다. `CHAT_PROVIDER=backend`에서는 `TEAM_BACKEND_URL`, `CHAT_PROVIDER=openai`에서는 `OPENAI_API_KEY`를 확인하며 로그인 성공이나 실제 외부 응답까지 보장하지 않는다.
+현재 Next의 제한은 프로세스당 분당 20건, 동시 3건인 로컬 보호 장치다. 운영 백엔드는 로그인 사용자와 IP 기준 제한을 공용 저장소에서 적용해야 한다. 대화 기록도 현재 React 상태에만 있으므로 계정별 기록이 필요하면 `conversation`과 `message` 모델을 추가한다.
 
 RAG 답변에 출처를 표시하려면 추후 응답을 아래처럼 확장하고 프론트 `ChatReply` 타입도 함께 수정한다.
 
@@ -440,21 +431,20 @@ frontend/.cache/kbo/details.json
 | 변수 | 사용 위치 | 공개 여부 |
 | --- | --- | --- |
 | `CHAT_PROVIDER` | Next 서버 | 비공개 설정 |
-| `TEAM_BACKEND_URL` | Next 서버가 호출하는 Django 기본 주소 | 비공개 설정 |
+| `CHAT_BACKEND_URL` | Next 서버 | 비공개 설정 |
 | `OPENAI_MODEL` | Next 또는 챗봇 백엔드 | 비공개 설정 |
 | `OPENAI_API_KEY` | Next 또는 챗봇 백엔드 | 비밀 |
 | `YOUTUBE_API_KEY` | Next 또는 백엔드 | 비밀 |
 | `KBO_COLLECTOR_ENABLED` | Next 서버 | 비공개 설정 |
 | `NEXT_PUBLIC_KAKAO_MAP_KEY` | 브라우저 | 공개되는 키, 도메인 제한 필요 |
 | `NEXT_PUBLIC_CKEDITOR_LICENSE_KEY` | 브라우저 | 번들에 포함됨, 라이선스 정책 확인 |
-| `KAKAO_REST_API_KEY` | 지도 경로 서버 또는 백엔드 | 비밀 |
-| `TOUR_API_KEY` / `KTO_TOUR_APT_KEY` | 관광공사 장소 조회 서버 또는 백엔드 | 비밀 |
+| `KAKAO_REST_API_KEY` | 백엔드 수집기 | 비밀 |
 | `DJANGO_SECRET_KEY` | Django | 비밀 |
 | `DATABASE_URL` 또는 `DB_*` | Django | 비밀 |
 | `ALLOWED_HOSTS` | Django | 환경별 설정 |
 | `CSRF_TRUSTED_ORIGINS` | Django | 환경별 설정 |
 
-공유용 변수 이름과 빈 값은 `frontend/.env.example`과 루트 `.env.example`에 정리되어 있다. 실제 키가 들어간 `.env.local`과 루트 `.env`는 계속 Git 제외 상태로 둔다.
+현재 `frontend/.env.example`은 작업 트리에서 삭제된 상태이므로 커밋 전에 팀이 공유할 예시 파일을 다시 정리할지 결정해야 한다. 실제 키가 들어간 `.env.local`은 계속 Git 제외 상태로 둔다.
 
 ## 11. Django 쪽 현재 선행 문제
 
@@ -502,7 +492,7 @@ from api.views import test_api
 3. 루트 CRUD와 장소 순서, 작성자 권한 연결
 4. 좋아요·조회 수와 목록 검색·정렬·페이지네이션 연결
 5. 팀별 게시판·댓글·홈 미리보기 연결
-6. `/chat/sessions/`와 `/chat/sessions/{id}/messages/` 계약 확인 후 `CHAT_PROVIDER=backend`로 전환
+6. `/api/chat/` 계약 구현 후 `CHAT_PROVIDER=backend`로 전환
 7. KBO 수집기를 단일 워커와 PostgreSQL로 이전하고 기존 응답 형식 유지
 8. 필요하면 YouTube 캐시와 CKEditor 이미지 업로드를 백엔드로 이전
 
@@ -515,7 +505,7 @@ from api.views import test_api
 - [ ] 좋아요 중복 생성 방지
 - [ ] 루트 장소 순서와 좌표가 상세 지도에 동일하게 복원
 - [ ] 팀별 게시판 홈 미리보기가 한 번의 API 요청으로 조회
-- [ ] 팀 챗봇 세션 생성 응답에 양의 정수 `id`, 메시지 응답에 비어 있지 않은 `assistant_message` 포함
+- [ ] 챗봇 백엔드가 `{ "reply": "..." }` 반환
 - [ ] 수집 워커가 여러 웹 인스턴스에서 중복 실행되지 않음
 - [ ] 경기 결과 저장 후 최종 순위 재확인 로직 유지
 - [ ] `.env.local`, API 키, KBO `.cache`, 개인정보가 Git에 포함되지 않음

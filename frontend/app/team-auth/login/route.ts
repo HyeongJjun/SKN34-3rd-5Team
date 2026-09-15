@@ -11,26 +11,14 @@ export async function POST(request: Request) {
     try { data = JSON.parse(raw); } catch { throw new ChatError("로그인 정보를 확인해 주세요."); }
     if (!isRecord(data) || typeof data.username !== "string" || !data.username.trim() || typeof data.password !== "string" || !data.password) throw new ChatError("아이디와 비밀번호를 입력해 주세요.");
     // Development fixture only; never issue backend tokens or grant server permissions.
-    const username = data.username.trim();
     const previewUsername = process.env.MEMBER_PREVIEW_USERNAME;
-    const testAccountNumber = /^test([1-5])$/.exec(username)?.[1];
-    const previewRole = username === previewUsername ? "master" : testAccountNumber ? "member" : null;
-    if (process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_MEMBER_PREVIEW === "true" && previewUsername && previewRole) {
+    if (process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_MEMBER_PREVIEW === "true" && previewUsername && data.username.trim() === previewUsername) {
       if (!await verifyPreviewPassword(data.password)) {
         throw new ChatError("아이디 또는 비밀번호를 확인해 주세요.", 401);
       }
-      return Response.json({
-        ok: true,
-        mode: "preview",
-        role: previewRole,
-        account: {
-          id: previewRole === "master" ? 1 : Number(testAccountNumber) + 1,
-          username,
-          nickname: previewRole === "master" ? "관리자" : `테스트팬${testAccountNumber}`,
-        },
-      }, { headers: { "Cache-Control": "no-store" } });
+      return Response.json({ ok: true, mode: "preview" }, { headers: { "Cache-Control": "no-store" } });
     }
-    const tokens = await teamRequest("auth/signin", { username, password: data.password }, false);
+    const tokens = await teamRequest("auth/signin", { username: data.username.trim(), password: data.password }, false);
     if (!isRecord(tokens) || typeof tokens.access !== "string" || typeof tokens.refresh !== "string") throw new ChatError("로그인 응답을 확인하지 못했어요.", 502);
     await saveTokens(tokens.access, tokens.refresh, true);
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

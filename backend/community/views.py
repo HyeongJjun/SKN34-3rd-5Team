@@ -1,0 +1,112 @@
+from django.db import DataError, IntegrityError, transaction
+from django.db.models import Count, F, Q
+from rest_framework import generics, status
+from rest_framework.exceptions import NotAuthenticated, PermissionDenied, ValidationError
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+
+from .models import CommunityPost, TEAM_CODES
+from .serializers import CommunityPostSerializer
+
+
+POST_INPUT_FIELDS = ("board", "team_code", "category", "title", "content")
+
+
+def post_queryset():
+    return CommunityPost.objects.annotate(
+        upvote_count=Count("votes", filter=Q(votes__value="up"), distinct=True),
+        downvote_count=Count("votes", filter=Q(votes__value="down"), distinct=True),
+        actual_comment_count=Count("comments", distinct=True),
+    ).order_by("post_number")
+
+
+def same_submission(post, validated_data):
+    return all(getattr(post, field) == validated_data[field] for field in POST_INPUT_FIELDS)
+
+
+class CommunityPostListCreateView(generics.ListCreateAPIView):
+    serializer_class = CommunityPostSerializer
+    permission_classes = (AllowAny,)
+    http_method_names = ("get", "post", "head", "options")
+
+    def get_permissions(self):
+        return (IsAuthenticated(),) if self.request.method == "POST" else (AllowAny(),)
+
+    def get_queryset(self):
+        queryset = post_queryset()
+        board = self.request.query_params.get("board")
+        team = self.request.query_params.get("team")
+        mine = self.request.query_params.get("mine")
+        if board is not None and board not in {"free", "teams"}:
+            raise ValidationError({"board": "free 또는 teams를 입력해 주세요."})
+        if team is not None:
+            team = team.upper()
+            if team not in TEAM_CODES:
+                raise ValidationError({"team": "올바른 팀 코드를 입력해 주세요."})
+            if board == "free":
+                raise ValidationError({"team": "팀 필터는 teams 게시판에서만 사용할 수 있습니다."})
+            queryset = queryset.filter(team_code=team)
+        if mine is not None:
+            if mine != "1":
+                raise ValidationError({"mine": "mine은 1만 사용할 수 있습니다."})
+            if not self.request.user.is_authenticated:
+                raise NotAuthenticated()
+            queryset = queryset.filter(owner=self.request.user)
+        if board is not None:
+            queryset = queryset.filter(board=board)
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        key = request.headers.get("Idempotency-Key", "").strip()
+        if not key or len(key) > 128:
+            raise ValidationError({"idempotencyKey": "1~128자의 Idempotency-Key가 필요합니다."})
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        existing = CommunityPost.objects.filter(owner=request.user, idempotency_key=key).first()
+        if existing:
+            if not same_submission(existing, values):
+                return Response({"idempotencyKey": "같은 키로 다른 게시글을 만들 수 없습니다."}, status=status.HTTP_409_CONFLICT)
+            return Response(self.get_serializer(post_queryset().get(pk=existing.pk)).data)
+
+        try:
+            with transaction.atomic():
+                post = serializer.save(
+                    owner=request.user,
+                    author=request.user.nickname or request.user.username,
+                    idempotency_key=key,
+                    is_sample=False,
+                )
+        except IntegrityError:
+            existing = CommunityPost.objects.filter(owner=request.user, idempotency_key=key).first()
+            if existing and same_submission(existing, values):
+                return Response(self.get_serializer(post_queryset().get(pk=existing.pk)).data)
+            return Response({"idempotencyKey": "같은 키로 다른 게시글을 만들 수 없습니다."}, status=status.HTTP_409_CONFLICT)
+        except DataError as exc:
+            raise ValidationError({"postNumber": "게시글 번호를 더 발급할 수 없습니다."}) from exc
+
+        post = post_queryset().get(pk=post.pk)
+        return Response(self.get_serializer(post).data, status=status.HTTP_201_CREATED)
+
+
+class CommunityPostDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = CommunityPostSerializer
+    lookup_field = "source_id"
+    lookup_url_kwarg = "source_id"
+    http_method_names = ("get", "patch", "delete", "head", "options")
+
+    def get_permissions(self):
+        return (AllowAny(),) if self.request.method in {"GET", "HEAD", "OPTIONS"} else (IsAuthenticated(),)
+
+    def get_queryset(self):
+        return post_queryset()
+
+    def get_object(self):
+        post = super().get_object()
+        if self.request.method not in {"GET", "HEAD", "OPTIONS"} and post.owner_id != self.request.user.id:
+            raise PermissionDenied("작성자만 수정하거나 삭제할 수 있습니다.")
+        if self.request.method == "GET":
+            CommunityPost.objects.filter(pk=post.pk).update(views=F("views") + 1)
+            post = post_queryset().get(pk=post.pk)
+        return post

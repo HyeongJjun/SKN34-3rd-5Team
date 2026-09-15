@@ -1,67 +1,131 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
-import { CommunityPostEditor } from "./community-post-editor";
-import { commentsForPost, createCommunityComment, deleteCommunityPost, useCommunityContent, type CommunityBoardSection } from "@/lib/community-store";
-import { usePreviewMember } from "@/lib/member-preview";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { createCommunityComment, deleteCommunityComment, fetchCommunityComments, updateCommunityComment, type CommunityComment } from "@/lib/community-api";
+import { useMemberAuth } from "@/lib/member-auth";
 import { getTeamBoard, getTeamBoardHref, type TeamCommunityPost } from "@/lib/team-community";
-import styles from "./community-board.module.css";
+import styles from "./community-interactions.module.css";
 
-export function CommunityPostBottom({ post, posts, teamCode, section }: { post: TeamCommunityPost; posts: TeamCommunityPost[]; teamCode?: string; section: CommunityBoardSection }) {
-  const postHref = (item: TeamCommunityPost) => {
-    if (section === "free") return `/community?post=${encodeURIComponent(item.id)}`;
-    if (section === "teams") return getTeamBoardHref(item.teamCode, item.id);
-    const params = new URLSearchParams({ post: item.id });
-    if (item.teamCode) params.set("team", item.teamCode);
-    return `/community/predictions?${params.toString()}`;
-  };
+const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
+type Props = { post: TeamCommunityPost; posts: TeamCommunityPost[]; teamCode?: string; isFree?: boolean; onWrite?: () => void };
+
+export function CommunityPostBottom(props: Props) {
+  const { user } = useMemberAuth();
+  const actorId = user?.id ?? null;
+  return <CommunityPostBottomContent key={`${props.post.id}:${actorId ?? "anonymous"}`} {...props} actorId={actorId} />;
+}
+
+function CommunityPostBottomContent({ post, posts, teamCode, isFree = false, onWrite, actorId }: Props & { actorId: number | null }) {
+  const postHref = (item: TeamCommunityPost) => isFree ? `/community?post=${encodeURIComponent(item.id)}` : getTeamBoardHref(item.teamCode, item.id);
   const router = useRouter();
-  const member = usePreviewMember();
-  const community = useCommunityContent();
-  const writer = useRef<HTMLDialogElement>(null);
+  const mounted = useRef(true);
+  const requestRef = useRef(0);
+  const [comments, setComments] = useState<CommunityComment[]>([]);
+  const [order, setOrder] = useState<"oldest" | "newest">("oldest");
+  const [reload, setReload] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingContent, setEditingContent] = useState("");
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [order, setOrder] = useState("oldest");
-  const [deleteReady, setDeleteReady] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; requestRef.current += 1; };
+  }, []);
+
+  useEffect(() => {
+    const requestId = ++requestRef.current;
+    fetchCommunityComments(post.id, order)
+      .then(next => { if (requestRef.current === requestId) setComments(next); })
+      .catch(reason => { if (requestRef.current === requestId) setError(errorMessage(reason, "댓글을 불러오지 못했어요.")); })
+      .finally(() => { if (requestRef.current === requestId) setLoading(false); });
+    return () => { requestRef.current += 1; };
+  }, [post.id, order, reload]);
+
+  async function createComment(event: FormEvent) {
+    event.preventDefault();
+    const content = draft.trim();
+    if (!actorId) { setError("댓글을 등록하려면 로그인해 주세요."); return; }
+    if (!content) { setError("댓글 내용을 입력해 주세요."); return; }
+    setSaving(true); setError(""); setMessage("");
+    try {
+      await createCommunityComment(post.id, content);
+      if (!mounted.current) return;
+      setDraft(""); setMessage("댓글을 등록했어요."); setReload(value => value + 1);
+    } catch (reason) {
+      if (mounted.current) setError(errorMessage(reason, "댓글을 등록하지 못했어요."));
+    } finally {
+      if (mounted.current) setSaving(false);
+    }
+  }
+
+  async function updateComment(event: FormEvent, commentId: number) {
+    event.preventDefault();
+    const content = editingContent.trim();
+    if (!actorId || !content) { setError(!actorId ? "로그인이 필요해요." : "댓글 내용을 입력해 주세요."); return; }
+    setSaving(true); setError(""); setMessage("");
+    try {
+      await updateCommunityComment(commentId, content);
+      if (!mounted.current) return;
+      setEditingId(null); setEditingContent(""); setMessage("댓글을 수정했어요."); setReload(value => value + 1);
+    } catch (reason) {
+      if (mounted.current) setError(errorMessage(reason, "댓글을 수정하지 못했어요."));
+    } finally {
+      if (mounted.current) setSaving(false);
+    }
+  }
+
+  async function removeComment(commentId: number) {
+    if (!actorId || !window.confirm("댓글을 삭제할까요?")) return;
+    setSaving(true); setError(""); setMessage("");
+    try {
+      await deleteCommunityComment(commentId);
+      if (!mounted.current) return;
+      setMessage("댓글을 삭제했어요."); setReload(value => value + 1);
+    } catch (reason) {
+      if (mounted.current) setError(errorMessage(reason, "댓글을 삭제하지 못했어요."));
+    } finally {
+      if (mounted.current) setSaving(false);
+    }
+  }
+
   const index = posts.findIndex(item => item.id === post.id);
   const next = index >= 0 ? posts[index + 1] : undefined;
   const previous = index > 0 ? posts[index - 1] : undefined;
-  const comments = commentsForPost(community.comments, post.id).sort((a, b) => order === "oldest" ? a.createdAt.localeCompare(b.createdAt) : b.createdAt.localeCompare(a.createdAt));
-  const listHref = section === "free" ? "/community" : section === "teams" ? getTeamBoardHref(teamCode) : `/community/predictions${teamCode ? `?team=${encodeURIComponent(teamCode)}` : ""}`;
   return <>
     <section className={styles.authorProfile} aria-label="작성자 프로필">
-      <Image src="/images/default-avatar.svg" width="56" height="56" alt="작성자 기본 프로필" />
-      <div><strong>{post.author}</strong><p>{section !== "free" && post.teamCode && <>{getTeamBoard(post.teamCode)?.shortName} · </>}작성자</p></div>
+      <img src="/images/default-avatar.svg" width="56" height="56" alt="작성자 기본 프로필" />
+      <div><strong>{post.author}</strong><p>{!isFree && <>{getTeamBoard(post.teamCode)?.shortName} · </>}작성자</p></div>
     </section>
     <section className={styles.comments} aria-label="댓글">
-      <header><h3>댓글 <b>{comments.length}</b></h3><div><button type="button" aria-pressed={order === "oldest"} onClick={() => setOrder("oldest")}>등록순</button><button type="button" aria-pressed={order === "newest"} onClick={() => setOrder("newest")}>최신순</button><button type="button" onClick={() => setMessage("저장된 댓글을 확인했어요.")}>↻ 새로고침</button></div></header>
-      {comments.length ? <ul className={styles.commentList}>{comments.map(comment => <li key={comment.id}><Image src="/images/default-avatar.svg" width="36" height="36" alt="" /><div><p><strong>{comment.author}</strong><time dateTime={comment.createdAt}>{new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Seoul" }).format(new Date(comment.createdAt))}</time></p><div>{comment.content}</div></div></li>)}</ul> : <p className={styles.commentsEmpty}>아직 등록된 댓글이 없어요.</p>}
-      <form className={styles.commentForm} onSubmit={event => {
-        event.preventDefault();
-        const form = event.currentTarget;
-        const data = new FormData(form);
-        try {
-          createCommunityComment({ postId: post.id, authorId: member?.id ?? null, author: member?.nickname ?? String(data.get("author") ?? ""), content: String(data.get("content") ?? "") });
-          form.reset();
-          setMessage("댓글을 등록했어요.");
-        } catch (caught) { setMessage(caught instanceof Error ? caught.message : "댓글을 저장하지 못했어요."); }
-      }}>
-        {!member && <input name="author" aria-label="댓글 작성자" placeholder="작성자" maxLength={20} required />}
-        <textarea name="content" aria-label="댓글 내용" placeholder="댓글을 입력해 주세요." maxLength={2000} required />
-        <button type="submit">등록</button>
+      <header><h3>댓글 <b>{loading ? (post.commentCount ?? 0) : comments.length}</b></h3><div><button type="button" aria-pressed={order === "oldest"} onClick={() => { if (order !== "oldest") { setLoading(true); setError(""); setOrder("oldest"); } }}>등록순</button><button type="button" aria-pressed={order === "newest"} onClick={() => { if (order !== "newest") { setLoading(true); setError(""); setOrder("newest"); } }}>최신순</button><button type="button" disabled={loading} onClick={() => { setLoading(true); setError(""); setReload(value => value + 1); }}>↻ 새로고침</button></div></header>
+      {loading ? <p className={styles.commentsEmpty}>댓글을 불러오는 중이에요.</p> : comments.length === 0 ? <p className={styles.commentsEmpty}>아직 등록된 댓글이 없어요.</p> : <ul className={styles.commentList}>
+        {comments.map(comment => <li key={comment.id}>
+          {editingId === comment.id ? <form onSubmit={event => void updateComment(event, comment.id)} className={styles.editForm}>
+            <textarea aria-label="수정할 댓글 내용" value={editingContent} onChange={event => setEditingContent(event.target.value)} maxLength={2000} required />
+            <div><button type="submit" disabled={saving}>저장</button><button type="button" disabled={saving} onClick={() => setEditingId(null)}>취소</button></div>
+          </form> : <>
+            <div className={styles.commentMeta}><strong>{comment.author}</strong><time dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString("ko-KR")}</time></div>
+            <p>{comment.content}</p>
+            {comment.authorId === actorId && <div className={styles.commentActions}><button type="button" disabled={saving} onClick={() => { setEditingId(comment.id); setEditingContent(comment.content); }}>수정</button><button type="button" disabled={saving} onClick={() => void removeComment(comment.id)}>삭제</button></div>}
+          </>}
+        </li>)}
+      </ul>}
+      <form className={styles.commentForm} onSubmit={event => void createComment(event)}>
+        <textarea aria-label="댓글 내용" placeholder={actorId ? "댓글을 입력해 주세요." : "로그인 후 댓글을 작성할 수 있어요."} value={draft} onChange={event => setDraft(event.target.value)} maxLength={2000} required disabled={!actorId || saving} />
+        <button type="submit" disabled={!actorId || saving}>{saving ? "처리 중" : "등록"}</button>
       </form>
       {message && <p role="status" className={styles.bottomNote}>{message}</p>}
+      {error && <p role="alert" className={styles.errorNote}>{error}</p>}
     </section>
     <nav className={styles.articleNavigation} aria-label="게시글 이동">
-      <div><Link href={listHref}>목록</Link>{next ? <Link href={postHref(next)}>다음글</Link> : <button disabled>다음글</button>}{previous ? <Link href={postHref(previous)}>이전글</Link> : <button disabled>이전글</button>}</div>
-      <div>{!post.isSample && <button type="button" onClick={() => {
-        if (!deleteReady) { setDeleteReady(true); setMessage("한 번 더 누르면 이 브라우저에서 글과 댓글이 삭제됩니다."); return; }
-        try { deleteCommunityPost(post.id); router.replace(listHref); }
-        catch (caught) { setMessage(caught instanceof Error ? caught.message : "임시 글을 삭제하지 못했어요."); }
-      }}>{deleteReady ? "삭제 확인" : "임시 글 삭제"}</button>}<button type="button" className={styles.writeButton} onClick={() => writer.current?.showModal()}>글쓰기</button><button type="button" onClick={() => router.back()}>이전페이지</button><button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>맨위로 ↑</button></div>
+      <div><Link href={isFree ? "/community" : getTeamBoardHref(teamCode)}>목록</Link>{next ? <Link href={postHref(next)}>다음글</Link> : <button disabled>다음글</button>}{previous ? <Link href={postHref(previous)}>이전글</Link> : <button disabled>이전글</button>}</div>
+      <div>{onWrite && <button type="button" className={styles.writeButton} onClick={onWrite}>글쓰기</button>}<button type="button" onClick={() => router.back()}>이전페이지</button><button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>맨위로 ↑</button></div>
     </nav>
-    <CommunityPostEditor ref={writer} section={section} teamCode={teamCode} />
   </>;
 }

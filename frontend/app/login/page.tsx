@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { memberError, saveMemberTokens } from "@/lib/member-auth-request";
-import { setPreviewSignedIn } from "@/lib/member-preview";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { AuthDialog } from "@/components/auth-dialog";
 import { useAuthHydrated } from "@/components/auth-hydration";
@@ -11,7 +9,6 @@ import { useAuthHydrated } from "@/components/auth-hydration";
 type LoginErrors = { username?: string; password?: string };
 
 export default function LoginPage() {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const hydrated = useAuthHydrated();
   const [message, setMessage] = useState("");
@@ -74,11 +71,6 @@ export default function LoginPage() {
     try {
       const response = await fetch("/api/auth/signin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: String(fields.get("username") ?? ""), password: String(fields.get("password") ?? "") }) });
       const result = await response.json();
-      if (response.ok && result.mode === "preview") {
-        setPreviewSignedIn(true, result.role === "master" ? "master" : "member", result.account);
-        router.push(result.role === "master" || new URLSearchParams(window.location.search).get("next") === "admin" ? "/admin" : "/mypage");
-        return;
-      }
       if (!response.ok || typeof result.access !== "string" || typeof result.refresh !== "string") throw new Error(memberError(result, "로그인에 실패했어요."));
       saveMemberTokens(result.access, result.refresh);
       window.location.assign(new URLSearchParams(window.location.search).get("next") === "admin" ? "/admin" : "/routes/new");

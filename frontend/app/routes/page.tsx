@@ -1,15 +1,16 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/components/icons";
 import { RouteNumber } from "@/components/route-number";
 import { formatRouteDate } from "@/components/route-card";
 import { RouteBoardSkeleton, RouteListSkeleton } from "@/components/route-skeleton";
-import { useLikedRoutes, useRoutes, useRoutesReady, useRouteViews } from "@/lib/routes";
+import { retryRoutes, useLikedRoutes, useRoutes, useRoutesError, useRoutesReady, useRouteViews } from "@/lib/routes";
 import { routeContentToText } from "@/lib/route-content";
-import { CommunityBoardTabs, TeamCommunityBoard } from "@/components/team-community-board";
+import { CommunityNavigation } from "@/components/community-navigation";
+import { getTeamBoardHref } from "@/lib/team-community";
 
 const stadiums = ["전체", "잠실", "고척", "인천", "수원", "대전", "대구", "광주", "사직", "창원"];
 type SearchField = "all" | "title" | "content" | "author";
@@ -28,6 +29,7 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
   const resultsHeading = useRef<HTMLHeadingElement>(null);
   const routes = useRoutes();
   const ready = useRoutesReady();
+  const loadError = useRoutesError();
   const liked = useLikedRoutes();
   const views = useRouteViews();
   const filtered = routes.filter(route => {
@@ -71,12 +73,13 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
         <Link href={writeHref} className="button button-primary community-write"><Icon name="book" size={18}/>글쓰기</Link>
       </header>
 
-      <CommunityBoardTabs active="routes"/>
+      <CommunityNavigation active="routes"/>
 
       <div className="community-layout">
         <section className="community-board" aria-labelledby="community-board-heading">
           <div className="community-board-heading"><h2 id="community-board-heading" ref={resultsHeading} tabIndex={-1}>직관 루트 공유</h2><span>우리의 야구, 우리의 하루</span></div>
           {showDeleted && <div className="route-feedback" role="status"><span>게시글을 삭제했어요.</span><button type="button" aria-label="삭제 안내 닫기" onClick={() => setShowDeleted(false)}>×</button></div>}
+          {loadError && <div className="route-error" role="alert"><span>{loadError} 이전 버전의 브라우저 코스만 표시될 수 있어요.</span> <button type="button" onClick={() => void retryRoutes()}>다시 불러오기</button></div>}
 
           <div className="community-stadiums" role="group" aria-label="구장으로 필터">
             {stadiums.map(item => <button type="button" key={item} className={stadium === item ? "is-active" : ""} aria-pressed={stadium === item} onClick={() => { setStadium(item); setPage(1); }}>{item}</button>)}
@@ -103,7 +106,7 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
                 <td className="community-number"><RouteNumber route={route} /></td>
                 <td className="community-post">
                   <Link href={`/routes/${encodeURIComponent(route.id)}`} className="community-post-link">
-                    <span className="community-post-labels"><span className="community-stadium-label">{shortStadium}</span><span className="community-sample-label">{route.isSample ? "샘플" : "내 글"}</span></span>
+                    <span className="community-post-labels"><span className="community-stadium-label">{shortStadium}</span><span className="community-sample-label">{route.isSample ? "샘플" : route.legacy ? "로컬" : route.owned ? "내 글" : "팬 글"}</span></span>
                     <span className="community-post-title">{route.title}</span>
                   </Link>
                   <div className="community-mobile-meta"><span className="community-mobile-author">{route.author}</span><time dateTime={route.createdAt}>{formatRouteDate(route.createdAt)}</time><span>조회 {viewCount}</span><span className={liked.includes(route.id) ? "is-liked" : ""}><Icon name="heart" size={12}/><span className="sr-only">좋아요 </span>{likeCount}</span></div>
@@ -130,11 +133,11 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
             <label className="community-search-input"><span className="sr-only">게시글 검색어</span><input type="search" placeholder="궁금한 직관 코스를 검색해보세요" maxLength={150} value={searchInput} onChange={event => setSearchInput(event.target.value)}/></label>
             <button type="submit" aria-label="게시글 검색"><Icon name="search" size={18}/><span>검색</span></button>
           </form>
-          <p className="community-storage-note">샘플 글이 포함되어 있습니다. 현재 내 글·좋아요·조회 수는 이 브라우저에만 저장됩니다.</p>
+          <p className="community-storage-note">새 코스는 공개 저장되고 편집 권한·좋아요·조회 수만 이 브라우저에 저장됩니다. 이전 버전 코스는 다시 저장하기 전까지 이 브라우저에만 남습니다.</p>
         </section>
 
         <aside className="community-sidebar" aria-label="커뮤니티 안내">
-          <div className="community-welcome"><span className="community-welcome-icon"><Icon name="route" size={26}/></span><p className="eyebrow">SHARE YOUR DAY</p><h2>나만의 특별한<br/>직관 코스가 있나요?</h2><Link href={writeHref} className="button button-primary">내 루트 작성하기<Icon name="arrow" size={16}/></Link></div>
+          <div className="community-welcome"><span className="community-welcome-icon"><Icon name="route" size={26}/></span><p className="eyebrow">SHARE YOUR DAY</p><h2>나의 직관이<br/>누군가의 좋은 코스로.</h2><p>경기 전 들른 맛집부터<br/>경기 후 여운이 남는 산책길까지.<br/>나만의 하루를 기록해보세요.</p><Link href={writeHref} className="button button-primary">내 루트 작성하기<Icon name="arrow" size={16}/></Link></div>
           <nav className="community-quick-links" aria-label="직관 준비 바로가기"><h2>직관 준비하기</h2><Link href="/stadiums"><Icon name="stadium" size={20}/><span>구장 정보</span><Icon name="chevron" size={14}/></Link><Link href="/guide"><Icon name="book" size={20}/><span>첫 직관 가이드</span><Icon name="chevron" size={14}/></Link></nav>
         </aside>
       </div>
@@ -144,10 +147,17 @@ function CommunityBoard({ initialQuery, initialStadium, deleted }: { initialQuer
 
 function RoutesQuery() {
   const params = useSearchParams();
-  if (params.get("board") === "free") return <TeamCommunityBoard key={params.toString()} teamCode={params.get("team") ?? ""} postId={params.get("post") ?? ""}/>;
+  if (params.get("board") === "free") return <LegacyTeamBoardRedirect teamCode={params.get("team") ?? ""} postId={params.get("post") ?? ""}/>;
   const requestedStadium = params.get("stadium") ?? "전체";
   const initialStadium = stadiums.find(stadium => normalize(requestedStadium).includes(stadium)) ?? "전체";
   return <CommunityBoard key={params.toString()} initialQuery={params.get("q") ?? ""} initialStadium={initialStadium} deleted={params.get("deleted") === "1"}/>;
+}
+
+function LegacyTeamBoardRedirect({ teamCode, postId }: { teamCode: string; postId: string }) {
+  const router = useRouter();
+  const href = getTeamBoardHref(teamCode, postId);
+  useEffect(() => { router.replace(href); }, [href, router]);
+  return <main className="container community-page"><p role="status">팀 게시판으로 이동하고 있어요.</p></main>;
 }
 
 export default function RoutesPage() {

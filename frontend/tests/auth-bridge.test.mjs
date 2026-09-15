@@ -14,11 +14,13 @@ for (const name of ["server-only", "next"]) mkdirSync(join(scratch, "node_module
 writeFileSync(join(scratch, "node_modules/server-only/index.js"), "module.exports = {};\n");
 writeFileSync(join(scratch, "node_modules/next/headers.js"), `
 const values = new Map();
+const options = new Map();
 exports.values = values;
+exports.options = options;
 exports.cookies = async () => ({
   get: name => values.has(name) ? { value: values.get(name) } : undefined,
   has: name => values.has(name),
-  set: (name, value) => values.set(name, value),
+  set: (name, value, settings) => { values.set(name, value); options.set(name, settings); },
   delete: name => values.delete(name),
 });
 `);
@@ -32,9 +34,10 @@ const require = createRequire(join(scratch, "test.cjs"));
 const sessionValues = new Map();
 global.sessionStorage = { getItem: name => sessionValues.get(name) ?? null, setItem: (name, value) => sessionValues.set(name, value), removeItem: name => sessionValues.delete(name) };
 const cookieValues = require("next/headers").values;
+const cookieOptions = require("next/headers").options;
 const { clearTokens, saveTokens, teamRequest } = require("./team-backend.js");
 const { clearMemberTokens, createMemberRequestGate, isCurrentMember, loadLatestMember, logoutMember, memberFetch, normalizeMemberEmail, saveMemberTokens } = require("./member-auth-request.js");
-beforeEach(() => { cookieValues.clear(); clearMemberTokens(); process.env.CHAT_BACKEND_URL = "http://backend:8000/"; });
+beforeEach(() => { cookieValues.clear(); cookieOptions.clear(); delete process.env.AUTH_COOKIE_SECURE; clearMemberTokens(); process.env.CHAT_BACKEND_URL = "http://backend:8000/"; });
 
 test("auth callers use the backend-shaped public paths", () => {
   const sources = ["app/login/page.tsx", "app/signup/page.tsx", "app/mypage/page.tsx", "components/member-account-settings.tsx", "components/member-header-actions.tsx", "lib/member-auth-request.ts"].map(name => readFileSync(join(root, name), "utf8")).join("\n");
@@ -151,6 +154,18 @@ test("logout marker blocks a late refreshed access cookie until a real login", a
   assert.equal(called, false);
   await saveTokens("new-access", "new-refresh", true);
   assert.equal(cookieValues.has("kbo_logged_out"), false);
+});
+
+test("auth cookies allow HTTP only through the explicit server setting", async () => {
+  process.env.AUTH_COOKIE_SECURE = "false";
+  await saveTokens("access", "refresh");
+  assert.equal(cookieOptions.get("kbo_access").secure, false);
+  process.env.AUTH_COOKIE_SECURE = "true";
+  await clearTokens();
+  assert.equal(cookieOptions.get("kbo_logged_out").secure, true);
+  process.env.AUTH_COOKIE_SECURE = "invalid";
+  await saveTokens("access");
+  assert.equal(cookieOptions.get("kbo_access").secure, process.env.NODE_ENV === "production");
 });
 
 test("an in-flight refresh finishing after logout preserves the logout marker", async () => {
