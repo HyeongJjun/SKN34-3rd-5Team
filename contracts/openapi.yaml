@@ -5802,6 +5802,313 @@ paths:
                 type: object
                 additionalProperties: {}
           description: ''
+  /api/places/:
+    get:
+      operationId: places_list
+      parameters:
+      - in: query
+        name: category
+        schema:
+          type: string
+      - in: query
+        name: kakao_place_id
+        schema:
+          type: string
+      - in: query
+        name: name
+        schema:
+          type: string
+      - in: query
+        name: page
+        schema:
+          type: integer
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+      tags:
+      - places
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+    post:
+      operationId: places_create
+      tags:
+      - places
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaceWrite'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Place'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '413':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '415':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+  /api/places/{id}/:
+    get:
+      operationId: places_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - places
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Place'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+    patch:
+      operationId: places_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - places
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPlacePatch'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Place'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '413':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '415':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+    delete:
+      operationId: places_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - places
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: 본문 없음
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+  /api/places/search/:
+    post:
+      operationId: places_search
+      tags:
+      - places
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaceSearch'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceSearchResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '413':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '415':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceError'
+          description: ''
 components:
   schemas:
     AdminMember:
@@ -7291,6 +7598,40 @@ components:
       - season
       - stadium_id
       - team_id
+    KakaoPlace:
+      type: object
+      properties:
+        id:
+          type: string
+        place_name:
+          type: string
+        road_address_name:
+          type: string
+        address_name:
+          type: string
+        category_group_name:
+          type: string
+        category_group_code:
+          type: string
+        category_name:
+          type: string
+        phone:
+          type: string
+        x:
+          type: string
+        y:
+          type: string
+      required:
+      - address_name
+      - category_group_code
+      - category_group_name
+      - category_name
+      - id
+      - phone
+      - place_name
+      - road_address_name
+      - x
+      - y
     LogoutRequest:
       type: object
       properties:
@@ -8313,6 +8654,47 @@ components:
           $ref: '#/components/schemas/NotificationSettings'
         visibility:
           $ref: '#/components/schemas/VisibilitySettings'
+    PatchedPlacePatch:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        address:
+          type: string
+          maxLength: 500
+        road_address:
+          type: string
+          maxLength: 500
+        category_group_code:
+          type: string
+          maxLength: 20
+        category_group_name:
+          type: string
+          maxLength: 100
+        category_name:
+          type: string
+          maxLength: 255
+        phone:
+          type: string
+          maxLength: 50
+        lat:
+          type: number
+          format: double
+          maximum: 90
+          minimum: -90
+        lng:
+          type: number
+          format: double
+          maximum: 180
+          minimum: -180
+        url:
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 500
+          - type: string
+            maxLength: 0
     PatchedPostseasonStage:
       type: object
       properties:
@@ -8670,6 +9052,201 @@ components:
         * `BEFORE` - BEFORE
         * `GAME` - GAME
         * `AFTER` - AFTER
+    Place:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        kakao_place_id:
+          type: string
+          nullable: true
+          maxLength: 100
+        name:
+          type: string
+          maxLength: 255
+        address:
+          type: string
+          maxLength: 500
+        road_address:
+          type: string
+          maxLength: 500
+        category_group_code:
+          type: string
+          maxLength: 20
+        category_group_name:
+          type: string
+          maxLength: 100
+        category_name:
+          type: string
+          maxLength: 255
+        phone:
+          type: string
+          maxLength: 50
+        lat:
+          type: number
+          format: double
+        lng:
+          type: number
+          format: double
+        url:
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 500
+          - type: string
+            maxLength: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        last_synced_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - created_at
+      - id
+      - lat
+      - lng
+      - name
+      - updated_at
+    PlaceError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+      - error
+    PlaceListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Place'
+      required:
+      - count
+      - page
+      - page_size
+      - results
+    PlaceSearch:
+      type: object
+      properties:
+        method:
+          type: string
+        keyword:
+          type: string
+          maxLength: 100
+        category:
+          type: string
+        lat:
+          type: number
+          format: double
+          maximum: 90
+          minimum: -90
+        lng:
+          type: number
+          format: double
+          maximum: 180
+          minimum: -180
+        radius:
+          type: integer
+          maximum: 20000
+          minimum: 1
+        page:
+          type: integer
+          maximum: 3
+          minimum: 1
+        size:
+          type: integer
+          maximum: 15
+          minimum: 1
+        sort:
+          type: string
+      required:
+      - lat
+      - lng
+      - method
+      - page
+      - size
+      - sort
+    PlaceSearchResponse:
+      type: object
+      properties:
+        places:
+          type: array
+          items:
+            $ref: '#/components/schemas/KakaoPlace'
+        hasNextPage:
+          type: boolean
+        syncedAt:
+          type: string
+          format: date-time
+          description: 카카오 공급자 응답을 성공적으로 조회한 시각이며 모든 저장 행의 동기화 시각을 뜻하지 않습니다.
+      required:
+      - hasNextPage
+      - places
+      - syncedAt
+    PlaceWrite:
+      type: object
+      properties:
+        kakao_place_id:
+          type: string
+          nullable: true
+          maxLength: 100
+        name:
+          type: string
+          maxLength: 255
+        address:
+          type: string
+          maxLength: 500
+        road_address:
+          type: string
+          maxLength: 500
+        category_group_code:
+          type: string
+          maxLength: 20
+        category_group_name:
+          type: string
+          maxLength: 100
+        category_name:
+          type: string
+          maxLength: 255
+        phone:
+          type: string
+          maxLength: 50
+        lat:
+          type: number
+          format: double
+          maximum: 90
+          minimum: -90
+        lng:
+          type: number
+          format: double
+          maximum: 180
+          minimum: -180
+        url:
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 500
+          - type: string
+            maxLength: 0
+      required:
+      - lat
+      - lng
+      - name
     PostseasonStage:
       type: object
       properties:
