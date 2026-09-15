@@ -49,7 +49,7 @@ UI/UX 가이드의 큰 항목 2~5에 맞춰 여섯 기본 화면, 반응형, 로
 
 - 회원·소셜 로그인 API, 세션과 작성자 권한 연결. 현재 로그인 성공 처리는 하지 않습니다.
 - 게시글·좋아요·페이지 조회 API 연결. 현재 로컬 저장소는 `lib/routes.ts`에 모았습니다.
-- 카카오 지도는 브라우저 SDK를 쓰고 장소 검색은 `/api/places/search/` Django API를 직접 호출합니다. 배포 시 JavaScript SDK 도메인을 등록하고 구장 경계 필터를 검증해야 합니다.
+- 카카오 지도는 브라우저 SDK를 쓰고 장소 검색은 `/api/places/search/` Django API를 직접 호출합니다. 검색 결과 저장도 백엔드가 담당합니다. 배포 시 JavaScript SDK 도메인을 등록하고 구장 경계 필터를 검증해야 합니다.
 - 관광공사 장소는 `/api/tourism/` Django API로 조회하며 기존 `Place` 원장과 provider 전용 OneToOne metadata를 사용합니다. 두 서버 키 모두 Next에 전달하지 않습니다.
 - CKEditor 5 라이선스 설정과 이미지 업로드. 사용자가 라이선스 없이 우선 진행하기로 선택해 현재는 일반 본문 입력을 사용하며, `components/editor.tsx`에 라이선스 설정 어댑터를 준비했습니다.
 - 챗봇의 팀 RAG·경기 정보·지도 데이터 연결과 답변 검증. 작성 화면의 코스 예시는 미리 작성된 내용입니다.

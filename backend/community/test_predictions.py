@@ -44,7 +44,7 @@ def source_payload(now, **game_changes):
     game = {
         "id": "20260915-LG-OB-1",
         "date": today,
-        "startsAt": (now + timedelta(hours=2)).isoformat(),
+        "startsAt": now.astimezone(datetime_timezone(timedelta(hours=9))).replace(hour=18, minute=30, second=0, microsecond=0).isoformat(),
         "stadium": "잠실",
         "away": {"code": "LG", "name": "LG", "score": None},
         "home": {"code": "OB", "name": "두산", "score": None},
