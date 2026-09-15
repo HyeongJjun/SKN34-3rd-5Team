@@ -49,9 +49,11 @@ CAT_LABEL = {"FOOD_OUT": "FOOD", "CAFE": "CAFE", "SPOT": "SPOT"}
 # (카테고리, 어떤 쿼리 벡터로 찾을지, 몇 개를 LLM 에 보여줄지)
 SEARCHES = [("FOOD_OUT", "meal", 8), ("FOOD_OUT", "after", 4), ("CAFE", "after", 4), ("SPOT", "after", 4)]
 
-STADIUM_KO = {"JAMSIL": "잠실야구장", "GOCHEOK": "고척스카이돔", "MUNHAK": "인천SSG랜더스필드", "SUWON": "수원KT위즈파크",
-              "DAEJEON": "대전한화생명볼파크", "DAEGU": "대구삼성라이온즈파크", "GWANGJU": "광주기아챔피언스필드",
-              "SAJIK": "사직야구장", "CHANGWON": "창원NC파크"}
+# 구장 한글명 — data/preprocessed/stadium_coordinates.csv 가 정본 (프론트 lib/stadiums.ts 와 같은 값).
+# 손으로 고치지 말고 CSV 가 바뀌면 거기 맞춰 갱신할 것.
+STADIUM_KO = {"JAMSIL": "잠실야구장", "GOCHEOK": "고척스카이돔", "MUNHAK": "인천 SSG 랜더스필드", "SUWON": "수원 KT 위즈 파크",
+              "DAEJEON": "대전 한화생명 볼파크", "DAEGU": "대구 삼성 라이온즈 파크", "GWANGJU": "광주-KIA 챔피언스 필드", "SAJIK": "사직야구장",
+              "CHANGWON": "창원 NC 파크"}
 
 _JSON_BLOCK = re.compile(r"\{.*\}", re.S)
 _WARN = re.compile(r"카카오맵 기준|외부 서비스 기준|영업 여부|확인해 보세요")
