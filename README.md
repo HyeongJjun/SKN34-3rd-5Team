@@ -1,3 +1,11 @@
+<!--
+  README 템플릿 (SKN34-3rd-5Team)
+  - 참고 구조: SKN23-4th-3TEAM README
+  - 🔴 = 과제 필수 산출물 / 나머지 = 선택(가산점)
+  - HTML 주석은 작성 가이드입니다. 채운 뒤 지워주세요.
+  - [TODO] = 아직 채워야 하는 자리
+-->
+
 <div align="center">
 
 <img src="./docs/images/logo.png" width="160" alt="팀 로고"/>
@@ -24,24 +32,23 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 1. [팀 소개](#1-팀-소개)
 2. [프로젝트 기간](#2-프로젝트-기간)
 3. [프로젝트 개요](#3-프로젝트-개요)
-4. [경쟁 서비스 비교](#4-경쟁-서비스-비교)
-5. [정책 및 신뢰성 설계](#5-정책-및-신뢰성-설계)
-6. 🔴 [수집된 데이터 및 데이터 전처리](#6-수집된-데이터-및-데이터-전처리)
-7. 🔴 [RAG · 에이전트 파이프라인 설계](#7-rag--에이전트-파이프라인-설계)
-8. 🔴 [시스템 아키텍처](#8-시스템-아키텍처)
-9. [데이터베이스 설계](#9-데이터베이스-설계)
-10. [디렉토리 구조](#10-디렉토리-구조)
-11. [Tech Stack](#11-tech-stack)
-12. [실행 방법](#12-실행-방법)
-13. [화면 설계 · UX Flow](#13-화면-설계--ux-flow)
-14. [API 문서](#14-api-문서)
-15. [배포 (AWS · Docker · Nginx · CI/CD)](#15-배포-aws--docker--nginx--cicd)
-16. 🔴 [테스트 계획 및 결과](#16-테스트-계획-및-결과)
-17. [시연 화면](#17-시연-화면)
-18. [트러블 슈팅](#18-트러블-슈팅)
-19. [향후 개선 계획 · 비즈니스 전략](#19-향후-개선-계획--비즈니스-전략)
-20. [협업 방식](#20-협업-방식)
-21. [한 줄 회고](#21-한-줄-회고)
+4. [정책 및 신뢰성 설계](#4-정책-및-신뢰성-설계)
+5. 🔴 [수집된 데이터 및 데이터 전처리](#5-수집된-데이터-및-데이터-전처리)
+6. 🔴 [RAG · 에이전트 파이프라인 설계](#6-rag--에이전트-파이프라인-설계)
+7. 🔴 [시스템 아키텍처](#7-시스템-아키텍처)
+8. [데이터베이스 설계](#8-데이터베이스-설계)
+9. [디렉토리 구조](#9-디렉토리-구조)
+10. [Tech Stack](#10-tech-stack)
+11. [실행 방법](#11-실행-방법)
+12. [화면 설계 · UX Flow](#12-화면-설계--ux-flow)
+13. [API 문서](#13-api-문서)
+14. [배포 (AWS · Docker · Nginx · CI/CD)](#14-배포-aws--docker--nginx--cicd)
+15. 🔴 [테스트 계획 및 결과](#15-테스트-계획-및-결과)
+16. [시연 화면](#16-시연-화면)
+17. [트러블 슈팅](#17-트러블-슈팅)
+18. [향후 개선 계획 · 비즈니스 전략](#18-향후-개선-계획--비즈니스-전략)
+19. [협업 방식](#19-협업-방식)
+20. [한 줄 회고](#20-한-줄-회고)
 
 ---
 
@@ -105,15 +112,19 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ### 3.2 프로젝트 배경
 
-<!-- 뉴스 캡처 이미지 2~3장을 docs/images/background/ 에 넣고 아래 경로를 바꾸세요. -->
+<!-- 기사 캡처: 각 기사 제목 부분을 직접 캡처해서 아래 파일명으로 docs/images/background/ 에 넣으세요. -->
 
-<p align="center">
-  <img src="./docs/images/background/news1.png" width="32%"/>
-  <img src="./docs/images/background/news2.png" width="32%"/>
-  <img src="./docs/images/background/news3.png" width="32%"/>
-</p>
+<table>
+  <tr>
+    <td align="center" width="33%"><a href="https://www.mt.co.kr/sports/2026/09/13/2026091215014823882"><img src="./docs/images/background/news1_mt.png" alt="머니투데이 기사"/></a><br/><sub>머니투데이 · 2026.09.13<br/>KBO 리그 역대 최다 관중 새 역사 쓰나</sub></td>
+    <td align="center" width="33%"><a href="https://www.hankyung.com/article/2025090560771"><img src="./docs/images/background/news2_hankyung.png" alt="한국경제 기사"/></a><br/><sub>한국경제 · 2025.09.05<br/>女心 훔친 프로야구…1200만 관중 시대</sub></td>
+    <td align="center" width="33%"><a href="https://www.etoday.co.kr/news/view/2512560"><img src="./docs/images/background/news3_etoday.png" alt="이투데이 기사"/></a><br/><sub>이투데이 · 2025.10.06<br/>원정 팬이 만든 체류형 관광</sub></td>
+  </tr>
+</table>
 
 #### ① KBO 리그, 2년 연속 역대급 흥행
+
+<p align="center"><img src="./docs/images/background/bg1_attendance_kpi.png" width="95%" alt="KBO 관중 지표"/></p>
 
 | 지표 | 수치 | 출처 |
 | --- | --- | --- |
@@ -127,6 +138,8 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 #### ② 새로 유입된 팬은 "야구장 초보", 그중에서도 2030 여성
 
+<p align="center"><img src="./docs/images/background/bg2_female_fans.png" width="85%" alt="예매자 중 여성 비율"/></p>
+
 | 지표 | 수치 | 출처 |
 | --- | --- | --- |
 | 온라인 예매자 중 여성 비율 | **57.5%** (2023년 51.4%) | [한국경제][hk] |
@@ -138,6 +151,8 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 - 2030 여성 팬덤, 스타 선수, 캐릭터 협업 굿즈, 구단 유튜브·SNS 콘텐츠, 야구장 시설 개선이 인기 요인으로 꼽힙니다. ([마이데일리, 2025.12.06][md])
 
 #### ③ 직관은 "경기 관람"이 아니라 "먹고 · 놀고 · 자는 여행"
+
+<p align="center"><img src="./docs/images/background/bg3_away_fan_behavior.png" width="85%" alt="원정 팬 행동"/></p>
 
 | 원정 팬 행동 (야놀자리서치) | 비율 |
 | --- | --- |
@@ -181,43 +196,15 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ---
 
-## 4. 경쟁 서비스 비교
+## 4. 정책 및 신뢰성 설계
 
-<!-- 서비스별로 주요 기능 / 강점 / 한계점 3줄씩 쓰고 마지막에 비교표 -->
-
-#### [TODO] 서비스 A (예: 구단 공식 앱)
-- **주요 기능**:
-- **강점**:
-- **한계점**:
-
-#### [TODO] 서비스 B (예: 포털 스포츠)
-- **주요 기능**:
-- **강점**:
-- **한계점**:
-
-#### [TODO] 서비스 C (예: 좌석 시야 서비스)
-- **주요 기능**:
-- **강점**:
-- **한계점**:
-
-| 비교 항목 | **우리 서비스** | 서비스 A | 서비스 B | 서비스 C |
-| --- | --- | --- | --- | --- |
-| 10개 구단 구장 정보 통합 | ✓ | ✗ | [TODO] | [TODO] |
-| 대화형 질의응답 | ✓ | [TODO] | [TODO] | [TODO] |
-| 경기 전후 코스 추천 · 지도 | ✓ | [TODO] | [TODO] | [TODO] |
-| 정보 신뢰도(근거 등급) 표시 | ✓ | [TODO] | [TODO] | [TODO] |
-
----
-
-## 5. 정책 및 신뢰성 설계
-
-### 5.1 데이터 수집 정책
+### 4.1 데이터 수집 정책
 <!-- robots.txt 확인 결과, 크롤링 제외 도메인, 수동 조사로 대체한 항목 -->
 - [TODO] KBO 공식 홈페이지는 robots.txt 확인 후 수집 대상에서 제외
 - [TODO] 구단 홈페이지별 접근 가능 여부 개별 확인
 - [TODO] 응원가 등 저작권 이슈 데이터 제외
 
-### 5.2 근거 등급 (답변 신뢰성)
+### 4.2 근거 등급 (답변 신뢰성)
 
 | 등급 | 기준 (`status` · `evidence_type`) | 답변 방식 |
 | --- | --- | --- |
@@ -226,17 +213,34 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | UNOFFICIAL | 블로그 · SNS 조사 | "비공식 정보라 현장과 다를 수 있습니다"로 시작 |
 | THIRD_PARTY | 카카오 등 외부 API | "외부 서비스 기준 정보라 방문 전 확인을 권합니다" |
 
-### 5.3 DB 조회 안전장치
+### 4.3 DB 조회 안전장치
 <!-- 읽기 전용 계정, SQL 검증기, 타임아웃, 최대 행 수 -->
 - [TODO]
 
+### 4.4 코스 장소 선정 기준
+
+> 상세: [`docs/코스장소_선정기준_핫플정의_20260916.md`](./docs/코스장소_선정기준_핫플정의_20260916.md)
+
+코스는 **경기 전 식사 → 구장 → 경기 후 갈 곳** 순서입니다. 인기 데이터(평점·리뷰)가 없기 때문에 "핫플레이스"라고 부르지 않고, 아래 규칙으로만 장소를 고릅니다.
+
+| 종류 | 포함 | 제외 | 기본 반경 |
+| --- | --- | --- | --- |
+| 경기 전 식사 | 카카오 음식점(FD6) | 술집, 구장 안 매대 | 도보 20분 (1.6km) |
+| 카페·디저트 | 카카오 카페(CE7) | 유아 놀이시설, 만화방·보드카페, 구장 안 매대 | 도보 20분 (1.6km) |
+| 주점 | 음식점 중 술집 | 구장 안 매대, **운전·가족·아이 동행 시** | 도보 20분 (1.6km) |
+| 야간 명소 | 관광명소(AT4) 중 테마거리·전망대·도심 산책길·호수 | 산·계곡·저수지·숲·도예공방·온천·수목원 등 | 도보 30분 (2.5km) |
+
+- **구장 안 매대 판정**: `in_stadium_flag=Y` 이거나, 이름에 "OO야구장점 · NC파크점 · 2층3루" 같은 구장명·좌석 구역이 들어간 곳 (1,008건 중 182건)
+- **선정 방식**: 조건으로 거르기 → 남은 곳 중 랜덤 → 코드가 계산한 사실(거리·동선·요청 조건)로만 추천 이유 작성
+- **표현 제한**: 근거 데이터가 없는 "맛있는 · 유명한 · 인기 많은" 같은 표현은 쓰지 않음
+
 ---
 
-## 6. 수집된 데이터 및 데이터 전처리
+## 5. 수집된 데이터 및 데이터 전처리
 
 > 🔴 필수 산출물 · 상세 문서: [`data/preprocessed/README.md`](./data/preprocessed/README.md)
 
-### 6.1 데이터 출처
+### 5.1 데이터 출처
 
 | 출처 | 수집 방식 | 활용 | 비고 |
 | --- | --- | --- | --- |
@@ -247,7 +251,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | 자리어때 | [TODO] | 구장 내 먹거리 · 편의시설 위치 | |
 | 블로그 · SNS | 수동 조사 | 재입장 규정 | UNOFFICIAL |
 
-### 6.2 데이터 현황
+### 5.2 데이터 현황
 
 <!-- data/preprocessed CSV 행 수 표. 최종 develop 기준으로 다시 세서 채우세요. -->
 
@@ -255,16 +259,16 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | --- | --- | --- |
 | [TODO] | | |
 
-### 6.3 전처리 파이프라인
+### 5.3 전처리 파이프라인
 
 <p align="center"><img src="./docs/images/diagram_data_pipeline.png" width="90%"/></p>
 
-### 6.4 전처리 규칙
+### 5.4 전처리 규칙
 - [TODO] 원본(`data/raw`)은 수정하지 않고 결과만 `data/preprocessed`에 저장
 - [TODO] 팀 코드 표준화 (LG, DOOSAN, KIWOOM, SSG, KT, HANWHA, SAMSUNG, KIA, LOTTE, NC)
 - [TODO] CSV는 `utf-8-sig`, 모든 행에 `status` · `evidence_type` 태깅
 
-### 6.5 청킹 · 임베딩
+### 5.5 청킹 · 임베딩
 
 | 항목 | 설정 |
 | --- | --- |
@@ -276,11 +280,11 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ---
 
-## 7. RAG · 에이전트 파이프라인 설계
+## 6. RAG · 에이전트 파이프라인 설계
 
 > 🔴 필수 산출물 · 코드: [`backend/llm/rag/`](./backend/llm/rag/), 인덱싱: [`build_index.py`](./backend/llm/management/commands/build_index.py)
 
-### 7.1 전체 흐름
+### 6.1 전체 흐름
 
 <p align="center"><img src="./docs/images/diagram_chat_pipeline.png" width="90%"/></p>
 
@@ -288,23 +292,23 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 [TODO] 질문 → dispatcher → retrieve → build_prompt → agent(도구 호출) → parse_output → persona
 ```
 
-### 7.2 에이전트 도구
+### 6.2 에이전트 도구
 
 | 도구 | 읽는 곳 | 용도 |
 | --- | --- | --- |
 | [TODO] | | |
 
-### 7.3 프롬프트 설계
+### 6.3 프롬프트 설계
 <!-- 시스템 규칙, 근거 등급별 말투, 숫자 원문 보존 등 -->
 - [TODO]
 
-### 7.4 코스 추천 흐름
+### 6.4 코스 추천 흐름
 
 <p align="center"><img src="./docs/images/diagram_course_sequence.png" width="90%"/></p>
 
 ---
 
-## 8. 시스템 아키텍처
+## 7. 시스템 아키텍처
 
 > 🔴 필수 산출물
 
@@ -314,7 +318,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ---
 
-## 9. 데이터베이스 설계
+## 8. 데이터베이스 설계
 
 <p align="center"><img src="./docs/images/erd.png" width="90%"/></p>
 
@@ -327,7 +331,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ---
 
-## 10. 디렉토리 구조
+## 9. 디렉토리 구조
 
 ```text
 SKN34-3rd-5Team/
@@ -353,7 +357,7 @@ SKN34-3rd-5Team/
 
 ---
 
-## 11. Tech Stack
+## 10. Tech Stack
 
 | 분류 | 기술 |
 | --- | --- |
@@ -367,7 +371,7 @@ SKN34-3rd-5Team/
 
 ---
 
-## 12. 실행 방법
+## 11. 실행 방법
 
 ```bash
 # 1. 환경변수
@@ -385,7 +389,7 @@ docker compose exec backend python manage.py build_index
 
 ---
 
-## 13. 화면 설계 · UX Flow
+## 12. 화면 설계 · UX Flow
 
 <p align="center"><img src="./docs/images/diagram_ux_flow.png" width="90%"/></p>
 
@@ -399,7 +403,7 @@ docker compose exec backend python manage.py build_index
 
 ---
 
-## 14. API 문서
+## 13. API 문서
 
 - OpenAPI: [`contracts/openapi.yaml`](./contracts/openapi.yaml)
 - Postman: [`docs/postman/`](./docs/postman/)
@@ -410,7 +414,7 @@ docker compose exec backend python manage.py build_index
 
 ---
 
-## 15. 배포 (AWS · Docker · Nginx · CI/CD)
+## 14. 배포 (AWS · Docker · Nginx · CI/CD)
 
 <!-- develop push → CI(Django check, Next build) → CD(EC2 SSH 배포) 흐름 -->
 
@@ -418,11 +422,11 @@ docker compose exec backend python manage.py build_index
 
 ---
 
-## 16. 테스트 계획 및 결과
+## 15. 테스트 계획 및 결과
 
 > 🔴 필수 산출물 · 코드: [`rag_test/`](./rag_test/)
 
-### 16.1 테스트 계획
+### 15.1 테스트 계획
 
 | 구분 | 대상 | 방법 | 지표 |
 | --- | --- | --- | --- |
@@ -431,22 +435,22 @@ docker compose exec backend python manage.py build_index
 | 단위 · 통합 테스트 | [TODO] | unittest · node --test | 통과 여부 |
 | 사용자 시나리오 | [TODO] | 수동 QA | 기대 결과 일치 |
 
-### 16.2 골든셋 구성
+### 15.2 골든셋 구성
 - [TODO] 문항 수, 질문 그룹(일정 · 순위 · 가격 · 반입 · 거절 · 함정 · 모호 …)
 
-### 16.3 검색 성능 결과
+### 15.3 검색 성능 결과
 
 | 설정 | Hit@1 | Hit@5 | MRR |
 | --- | --- | --- | --- |
 | [TODO] | | | |
 
-### 16.4 생성 성능 결과
+### 15.4 생성 성능 결과
 
 | 모드 | 정답 | 오답 | 지어냄 | 오거절 |
 | --- | --- | --- | --- | --- |
 | [TODO] | | | | |
 
-### 16.5 테스트 시나리오 (Test Case)
+### 15.5 테스트 시나리오 (Test Case)
 
 | No | 시나리오 | 입력 | 기대 결과 | 결과 |
 | --- | --- | --- | --- | --- |
@@ -459,7 +463,7 @@ docker compose exec backend python manage.py build_index
 
 ---
 
-## 17. 시연 화면
+## 16. 시연 화면
 
 <!-- GIF 추천: docs/images/demo/*.gif -->
 
@@ -469,7 +473,7 @@ docker compose exec backend python manage.py build_index
 
 ---
 
-## 18. 트러블 슈팅
+## 17. 트러블 슈팅
 
 <!-- 문제 → 원인 → 해결 → 결과 형식으로 3~5개 -->
 
@@ -505,20 +509,22 @@ docker compose exec backend python manage.py build_index
 
 ---
 
-## 19. 향후 개선 계획 · 비즈니스 전략
+## 18. 향후 개선 계획 · 비즈니스 전략
 
-### 19.1 모델 · 서비스 고도화
+### 18.1 모델 · 서비스 고도화
+- **장소 인기 신호 추가**: 지금은 평점·리뷰 데이터가 없어 거리·동선·조건으로만 고릅니다. 우리 사이트 코스에 많이 담긴 장소 가중치, 공공 관광 데이터, 사용자 별점을 붙여 "실제로 많이 가는 곳"을 반영할 계획입니다.
+- **주점·야간 장소 수집 보강**: 카카오 API의 카테고리당 45건 제한 때문에 주점이 9개 구장 합계 11곳뿐입니다. 키워드 검색으로 따로 수집합니다.
 - [TODO]
 
-### 19.2 실제 서비스 적용 시 추가 기능
+### 18.2 실제 서비스 적용 시 추가 기능
 - [TODO]
 
-### 19.3 적용 가능한 곳 · 비즈니스 모델
+### 18.3 적용 가능한 곳 · 비즈니스 모델
 - [TODO]
 
 ---
 
-## 20. 협업 방식
+## 19. 협업 방식
 
 - **Git 전략**: [TODO] Fork → `feat/*` 브랜치 → `develop` PR → 팀장 리뷰 후 Squash merge
 - **커밋 규칙**: `type: 한글 작업 내용` (`feat` · `fix` · `refactor` · `docs` · `test` · `chore`)
@@ -527,7 +533,7 @@ docker compose exec backend python manage.py build_index
 
 ---
 
-## 21. 한 줄 회고
+## 20. 한 줄 회고
 
 | 이름 | 회고 |
 | --- | --- |
