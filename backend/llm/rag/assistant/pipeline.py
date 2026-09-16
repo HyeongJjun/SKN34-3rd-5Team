@@ -142,10 +142,10 @@ def build_chain(model=None, tool_list=None, retriever=None):
     return RunnableLambda(retriever or retrieve) | RunnableLambda(build_prompt) | agent | RunnableLambda(parse_output)
 
 
-def stream_answer(question, history=None, hint_stadium=None, *, model=None, tool_list=None, retriever=None):
+def _stream_answer(question, history=None, hint_stadium=None, *, model=None, tool_list=None, retriever=None):
     """도구 계획은 숨기고 마지막 provider 응답 청크만 즉시 전달한다."""
     model = model or llm()
-    st = tools.new_state(hint_stadium, question=question, history=history)
+    st = tools.state()
     t0 = time.perf_counter()
     prepared = (retriever or retrieve)({
         "question": question, "history": history or [], "hint": hint_stadium,
@@ -228,6 +228,14 @@ def stream_answer(question, history=None, hint_stadium=None, *, model=None, tool
     return out
 
 
+def stream_answer(question, history=None, hint_stadium=None, *, model=None, tool_list=None, retriever=None):
+    with tools.request_state(hint_stadium, question, history):
+        return (yield from _stream_answer(
+            question, history=history, hint_stadium=hint_stadium,
+            model=model, tool_list=tool_list, retriever=retriever,
+        ))
+
+
 def chain():
     global _chain
     if _chain is None:
@@ -235,15 +243,15 @@ def chain():
     return _chain
 
 
-def answer(question, history=None, hint_stadium=None, _chain_obj=None):
+def _answer(question, history=None, hint_stadium=None, _chain_obj=None):
     if _chain_obj is None:
-        stream = stream_answer(question, history=history, hint_stadium=hint_stadium)
+        stream = _stream_answer(question, history=history, hint_stadium=hint_stadium)
         while True:
             try:
                 next(stream)
             except StopIteration as done:
                 return done.value
-    st = tools.new_state(hint_stadium, question=question, history=history)
+    st = tools.state()
     t0 = time.perf_counter()
     text = _chain_obj.invoke(
         {"question": question, "history": history or [], "hint": hint_stadium},
@@ -265,3 +273,8 @@ def answer(question, history=None, hint_stadium=None, _chain_obj=None):
         if course.get(key):
             out[key] = course[key]
     return out
+
+
+def answer(question, history=None, hint_stadium=None, _chain_obj=None):
+    with tools.request_state(hint_stadium, question, history):
+        return _answer(question, history, hint_stadium, _chain_obj)
