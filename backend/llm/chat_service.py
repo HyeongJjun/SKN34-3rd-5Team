@@ -87,7 +87,7 @@ class ChatService:
         return results, schema_seen
 
     def _run(self, values):
-        # CHAT_USE_RAG=1 이면 KBO 직관 RAG 가 답한다 (0 이거나 테스트 중이면 None → 아래 도구 루프 그대로).
+        # 항상 KBO 직관 RAG 파이프라인이 답한다 (RAG + 야구 DB 도구). 테스트 중에만 None → 아래 도구 루프 그대로.
         # 지연 import: RAG 모듈이 깨져도 서버 기동은 되게.
         from .rag.pipeline import chat_chain
 

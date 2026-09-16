@@ -291,13 +291,16 @@ def answer(question, history=None, hint_stadium=None):
 
     # 2. 슬롯 · 가드
     stadium, cats = detect_stadium(question), detect_categories(question)
+    own_cats = bool(cats)
     multi = bool(ALL_STADIUM.search(question))
     if not cats:
         cats = cats_from_history(history)
     if multi:
         stadium, prev_stadium = None, None
         route.append("multi_stadium")
-    if stadium is None and prev_stadium and not multi and (not cats or set(cats) & CARRY_OVER):
+    # 이번 질문에 카테고리가 없으면(이전 질문에서 빌려 온 경우) 구장은 그대로 이어받는다.
+    # 예전에는 "광주경기보러…" 의 "경기"(SCHEDULE) 때문에 이어받기가 막혀 전 구장을 검색했다 (2026-09-15)
+    if stadium is None and prev_stadium and not multi and (not own_cats or not cats or set(cats) & CARRY_OVER):
         stadium = prev_stadium
         route.append(f"carry:{stadium}")
     guard = ("refund" if REFUND.search(question) else

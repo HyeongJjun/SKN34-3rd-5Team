@@ -47,6 +47,17 @@ class BaseballQueryServiceTest(SimpleTestCase):
                 self.service.execute_baseball_select(query, {}, 20)
         self.assertEqual(self.repository.execute_readonly.call_count, len(queries))
 
+    def test_boolean_conditions_and_case_are_allowed(self):
+        queries = (
+            'SELECT COUNT(*) FROM "GAME" g JOIN "TEAM" t ON t.id=g.home_team_id WHERE t.team_code = %(team)s AND g.game_date >= CURRENT_DATE',
+            'SELECT * FROM "GAME" WHERE home_score > away_score OR home_score IS NULL',
+            'SELECT CASE WHEN home_score > away_score THEN 1 ELSE 0 END AS home_win FROM "GAME"',
+        )
+        for query in queries:
+            with self.subTest(query=query):
+                self.service.execute_baseball_select(query, {"team": "KIA"}, 20)
+        self.assertEqual(self.repository.execute_readonly.call_count, len(queries))
+
     def test_named_parameter_is_not_interpolated(self):
         value = "1); DELETE FROM \"TEAM\"; --"
         self.service.execute_baseball_select(
