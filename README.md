@@ -422,7 +422,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ## 8. 데이터베이스 설계
 
-<p align="center"><img src="./docs/images/erd.png" width="90%" alt="데이터베이스 ERD"/></p>
+<p align="center"><img src="./docs/images/erd.svg" width="90%" alt="데이터베이스 ERD"/></p>
 <p align="center"><sub>🔍 그림을 누르면 원본 크기로 볼 수 있어요</sub></p>
 
 
