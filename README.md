@@ -59,7 +59,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 <table>
   <tr>
-    <td align="center"><img src="https://github.com/Seongho-haru.png?size=240" width="120"/><br/><b>[TODO] 이름</b><br/>[TODO] 역할</td>
+    <td align="center"><img src="https://github.com/Seongho-haru.png?size=240" width="120"/><br/><b>윤성호</b><br/>백엔드</td>
     <td align="center"><img src="https://github.com/HyeongJjun.png?size=240" width="120"/><br/><b>임형준</b><br/>데이터 · RAG · LLM</td>
     <td align="center"><!-- 사진: <img src="./docs/images/team/member3.png" width="120"/> --><br/><b>이현준</b><br/>인프라 · CI/CD</td>
     <td align="center"><img src="https://github.com/inyoung9629.png?size=240" width="120"/><br/><b>최인영</b><br/>프론트엔드</td>
@@ -78,7 +78,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 | 이름 | 담당 | 주요 작업 |
 | --- | --- | --- |
-| [TODO: 윤성호] | [TODO] 백엔드 | 인증(JWT) · 채팅 API · 코스 CRUD · 야구 SQL 조회 서비스, PR 리뷰·머지 |
+| 윤성호 | 백엔드 | 인증(JWT) · 채팅 API · 코스 CRUD · 야구 SQL 조회 서비스, PR 리뷰·머지 |
 | 임형준 | 데이터 · RAG · LLM | 데이터 수집·전처리, 청킹·임베딩(pgvector), RAG·에이전트 파이프라인, RAG 성능 평가 |
 | 이현준 | 인프라 | Docker Compose, GitHub Actions CI/CD, EC2 배포, 구장정보(venue) 에이전트 |
 | 최인영 | 프론트엔드 | Next.js 화면, 직관 코스 · 커뮤니티 · 회원 UI |
