@@ -78,7 +78,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | 이름 | 담당 | 주요 작업 |
 | --- | --- | --- |
 | [TODO: 윤성호] | [TODO] 백엔드 | 인증(JWT) · 채팅 API · 코스 CRUD · 야구 SQL 조회 서비스, PR 리뷰·머지 |
-| 이형준 | 데이터 · RAG · LLM | 데이터 수집·전처리, 청킹·임베딩(pgvector), RAG·에이전트 파이프라인, RAG 성능 평가 |
+| 임형준 | 데이터 · RAG · LLM | 데이터 수집·전처리, 청킹·임베딩(pgvector), RAG·에이전트 파이프라인, RAG 성능 평가 |
 | 이현준 | 인프라 | Docker Compose, GitHub Actions CI/CD, EC2 배포, 구장정보(venue) 에이전트 |
 | 최인영 | 프론트엔드 | Next.js 화면, 직관 코스 · 커뮤니티 · 회원 UI |
 | [TODO: masquerade0425] | [TODO] DB | baseball 도메인 ERD · DB 스키마 |
@@ -284,30 +284,9 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ### 5.3 전처리 파이프라인
 
-```mermaid
-flowchart LR
-    subgraph RAW["data/raw · 원본 보존"]
-        R1[구장정보.xlsx]
-        R2[구장먹거리,컨텐츠.xlsx]
-        R3[보완 조사 xlsx 3종]
-        R4[kbo_ticket_policy.csv]
-        R5[team_stadium_code_map.csv]
-    end
-    subgraph CRAWL["backend/crawling"]
-        C1[TVING 일정 · 순위]
-        C2[카카오 로컬]
-    end
-    subgraph PRE["backend/preprocessing"]
-        P1[코드 정규화<br/>team_stadium_map]
-        P2[시트별 정규화<br/>normalize_*]
-        P3[문장 → 구조화<br/>parse_ticket_policy]
-        P4[content 컬럼<br/>add_common_columns]
-    end
-    RAW --> PRE --> OUT[("data/preprocessed<br/>CSV 21종")]
-    CRAWL --> OUT
-    OUT --> IDX[build_index → pgvector]
-    OUT --> DB[import_baseball_data → 야구 DB]
-```
+<p align="center"><a href="./docs/architecture/data_pipeline.html"><img src="./docs/images/data_pipeline.gif" width="95%" alt="데이터 수집 · 전처리 · 인덱싱 흐름 (움직이는 그림)"/></a></p>
+
+<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/data_pipeline.png">PNG</a> · <a href="./docs/images/data_pipeline.svg">SVG</a> · PPT용 영상 <a href="./docs/media/data_pipeline.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/data_pipeline.html">인터랙티브 HTML</a></sub>
 
 ### 5.4 전처리 규칙
 
@@ -337,24 +316,9 @@ flowchart LR
 
 ### 6.1 전체 흐름
 
-```mermaid
-flowchart LR
-    Q([질문]) --> CS[ChatService<br/>chat_chain]
-    CS --> D{dispatcher<br/>야구 관련?}
-    D -- 무관 --> F[고정 안내]
-    D -- 관련 --> R["① retrieve<br/>구장·카테고리 필터 + HNSW<br/>18개 → 키워드 재정렬 → 6개"]
-    R --> P["② build_prompt<br/>규칙 + 문서 + 오늘 날짜<br/>+ 화면 구장 + 대화 8개"]
-    P --> A["③ agent<br/>create_agent"]
-    A -. 도구 .-> T1[("야구 DB<br/>읽기 전용")]
-    A -. 도구 .-> T2[문서 추가 검색]
-    A -. 도구 .-> T3[카카오 주변 장소]
-    A -. 도구 .-> T4[코스 짜기]
-    A --> O[④ parse_output]
-    O --> PF[persona.finalize<br/>말투 · 경고 문구]
-    A -- 실패 --> FB[기존 도메인<br/>course · nearby · venue · club]
-    FB --> PF
-    PF --> ANS([답변 + 근거 + 지도 places])
-```
+<p align="center"><a href="./docs/architecture/chat_pipeline.html"><img src="./docs/images/chat_pipeline.gif" width="95%" alt="챗봇 RAG · 에이전트 흐름 (움직이는 그림)"/></a></p>
+
+<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/chat_pipeline.png">PNG</a> · <a href="./docs/images/chat_pipeline.svg">SVG</a> · PPT용 영상 <a href="./docs/media/chat_pipeline.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/chat_pipeline.html">인터랙티브 HTML</a></sub>
 
 ```
 질문 → dispatcher(야구 무관만 차단, LLM 0회)
@@ -393,32 +357,9 @@ flowchart LR
 
 ### 6.4 코스 추천 흐름
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor U as 사용자
-    participant AG as assistant agent
-    participant CO as course.answer
-    participant DB as 야구 DB · pgvector
-    participant LLM as OpenAI
-    participant FE as 프론트 지도
+<p align="center"><a href="./docs/architecture/course_sequence.html"><img src="./docs/images/course_sequence.gif" width="95%" alt="직관 코스 추천 순서 (움직이는 그림)"/></a></p>
 
-    U->>AG: "친구랑 잠실 경기 전후 걸어서 코스 짜줘"
-    AG->>CO: plan_course(요청 문장)
-    CO->>CO: ① 슬롯 — 구장 · 동행 · 취향 · 이동수단 · 여유시간 (LLM 0회)
-    CO->>DB: ② 경기 조회 — 날짜 · 시작 시각 · 상대
-    CO->>LLM: ③ "경기 전용 / 경기 후용" 쿼리 2개 한 번에 임베딩
-    CO->>DB: 카테고리별 벡터 검색 (음식점 · 카페 · 명소)
-    CO->>CO: 동행 제외 규칙 · 취향 가산 · 반경으로 후보 거르기
-    CO->>LLM: ④ 후보 P1..Pn + 방위 · 거리 → 키만 고르기 (LLM 1회)
-    LLM-->>CO: JSON {place_key, phase, reason, intro}
-    CO->>CO: ⑤ 동선 — 총 도보가 길면 가까운 후보로 교체
-    CO->>CO: ⑥ 시간표 — 경기 시작에서 역산한 도착 · 출발 시각
-    CO->>DB: ⑦ 키 → DB 값(이름 · 좌표 · 주소 · 카카오 id)으로 places[] 조립
-    CO-->>AG: answer + places + coursePayload + travel
-    AG-->>FE: 답변과 함께 places 전달
-    FE-->>U: 지도에 방문 순서 자동 표시 · 저장 버튼
-```
+<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/course_sequence.png">PNG</a> · <a href="./docs/images/course_sequence.svg">SVG</a> · PPT용 영상 <a href="./docs/media/course_sequence.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/course_sequence.html">인터랙티브 HTML</a></sub>
 
 > **좌표 환각이 0인 이유**: LLM에게서 받는 것은 `place_key · phase · reason · intro`뿐이고, 이름 · 좌표 · 주소 · 시각 · 거리는 전부 DB 값이거나 코드가 계산한 값입니다.
 
@@ -447,9 +388,9 @@ sequenceDiagram
 
 > 🔴 필수 산출물 · 상세: [`docs/deliverables/02_시스템아키텍처.md`](./docs/deliverables/02_시스템아키텍처.md)
 
-<p align="center"><img src="./docs/images/diagram_system_architecture.png" width="95%"/></p>
+<p align="center"><a href="./docs/architecture/system_architecture.html"><img src="./docs/images/system_architecture.gif" width="100%" alt="시스템 아키텍처 (움직이는 그림)"/></a></p>
 
-<!-- 인터랙티브 버전: docs/architecture/system_architecture.html (내려받아 브라우저로 열기) -->
+<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/system_architecture.png">PNG</a> · <a href="./docs/images/system_architecture.svg">SVG</a> · PPT용 영상 <a href="./docs/media/system_architecture.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/system_architecture.html">인터랙티브 HTML</a></sub>
 
 | 계층 | 구성 | 역할 |
 | --- | --- | --- |
@@ -462,49 +403,17 @@ sequenceDiagram
 | Storage · Mail | MinIO · Mailpit | 커뮤니티 이미지, 비밀번호 재설정 메일 |
 | Ops | Docker Compose · GitHub Actions → EC2 · LangSmith | 빌드 · 배포, LLM 호출 추적 |
 
+> 다이어그램 전체 목록과 README · PPT 사용법: [`docs/architecture/README.md`](./docs/architecture/README.md)
+
 **인덱싱과 서빙을 분리**했습니다. 무거운 작업(파일 로딩 · 청킹 · 임베딩 · 적재)은 오프라인 `build_index`가 한 번 하고, 요청 때는 검색과 생성만 합니다.
 
 ---
 
 ## 8. 데이터베이스 설계
 
-```mermaid
-erDiagram
-    Document ||--o{ DocumentChunk : has
-    Document {
-        int id PK
-        string title
-        string source
-    }
-    DocumentChunk {
-        int id PK
-        int document_id FK
-        text content
-        int chunk_index
-        jsonb metadata "doc_id, category, stadium_code, status, evidence_type"
-        vector embedding "1536, HNSW cosine"
-    }
-    ChatSession ||--o{ ChatMessage : has
-    ChatSession ||--o{ ChatTurn : has
-    ChatSession {
-        int id PK
-        int user_id FK
-        string title
-    }
-    ChatMessage {
-        int id PK
-        int session_id FK
-        int sequence_no
-        string role "human or ai"
-        text message
-    }
-    ChatTurn {
-        uuid id PK
-        int session_id FK
-        text question
-        string status "pending, completed, stopped"
-    }
-```
+<p align="center"><img src="./docs/images/erd.png" width="90%" alt="데이터베이스 ERD"/></p>
+
+<sub>원본: <code>docs/diagrams/erd.mmd</code> · 다시 그리기: <code>bash docs/diagrams/render.sh</code> (Mermaid)</sub>
 
 | 영역 | 주요 테이블 |
 | --- | --- |
@@ -512,8 +421,6 @@ erDiagram
 | 채팅 | `ChatSession`, `ChatMessage`, `ChatTurn` (답변 중단 · 확정 처리) |
 | 야구 데이터 | `GAME`, `STANDING_HISTORY`, `TICKET_PRICE`, `SEAT_ZONE`, `TICKET_POLICY` 등 19개 (`baseball` 앱) |
 | 회원 · 커뮤니티 · 코스 | 회원 · JWT blacklist, 게시글 · 초안 · 이미지 · 승부 예측, `Course` · `CourseStop` · 장소 · 길찾기 캐시 |
-
-<!-- ERD 이미지가 준비되면 docs/images/erd.png 로 넣고 위 다이어그램과 바꿔도 됩니다. -->
 
 ---
 
@@ -548,8 +455,10 @@ SKN34-3rd-5Team/
 │   └── preprocessed/            # 전처리 결과 CSV 21종
 ├── docs/
 │   ├── deliverables/            # 🔴 필수 산출물 문서 4종
-│   ├── architecture/            # 아키텍처 인터랙티브 HTML · 원본 JSON
-│   ├── images/                  # README 이미지
+│   ├── architecture/            # archify 인터랙티브 HTML · 원본 JSON · 그림/영상 재생성 스크립트
+│   ├── media/                   # PPT용 흐름 영상 (MP4 · WebM)
+│   ├── images/                  # README · 산출물 그림 (GIF · PNG · SVG)
+│   ├── diagrams/                # ERD 등 Mermaid 원본 · 차트 코드 + render.sh
 │   └── test_results/            # 최종 평가 결과 CSV · 골든셋
 ├── rag_test/                    # 골든셋 평가 스크립트 (STEP 1~5)
 ├── contracts/openapi.yaml       # API 계약
@@ -613,21 +522,9 @@ docker compose exec backend python manage.py check_index
 
 ## 12. 화면 설계 · UX Flow
 
-```mermaid
-flowchart TD
-    H["메인<br/>챗봇 입력 · 오늘 경기 · 순위 · 샘플 코스"] --> C["챗봇<br/>구장 선택 + 질문"]
-    C --> A1["텍스트 답변<br/>근거 등급 안내"]
-    C --> A2[코스 답변]
-    A2 --> M["지도 자동 표시<br/>방문 순서 · 이동 시간"]
-    M --> S{로그인?}
-    S -- 예 --> SV[코스 저장 · 공유]
-    S -- 아니오 --> L[로그인 / 회원가입] --> SV
-    SV --> R["코스 목록<br/>검색 · 좋아요"]
-    H --> SC[일정]
-    H --> ST[순위]
-    H --> ID[구장 정보 · 관람 가이드]
-    H --> CM["커뮤니티<br/>게시판 · 승부 예측"]
-```
+<p align="center"><a href="./docs/architecture/ux_flow.html"><img src="./docs/images/ux_flow.gif" width="95%" alt="화면 흐름 (움직이는 그림)"/></a></p>
+
+<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/ux_flow.png">PNG</a> · <a href="./docs/images/ux_flow.svg">SVG</a> · PPT용 영상 <a href="./docs/media/ux_flow.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/ux_flow.html">인터랙티브 HTML</a></sub>
 
 | 화면 | 설명 | 캡처 |
 | --- | --- | --- |
@@ -664,18 +561,9 @@ flowchart TD
 
 ## 14. 배포 (AWS · Docker · Nginx · CI/CD)
 
-```mermaid
-flowchart LR
-    PR[PR → develop] --> CI["ci-test<br/>pip install · manage.py check<br/>npm ci · next build"]
-    PUSH[push → develop] --> CI --> CD["cd-deploy<br/>SSH → EC2<br/>compose up --build"]
-    CD --> EC2
-    subgraph EC2["EC2 · docker compose"]
-        NG[nginx :80] --> FE[frontend :3000]
-        NG --> BE[backend :8000]
-        BE --> PG[(PostgreSQL 18<br/>pgvector)]
-        BE --> MN[(MinIO)]
-    end
-```
+<p align="center"><a href="./docs/architecture/deploy_cicd.html"><img src="./docs/images/deploy_cicd.gif" width="95%" alt="협업 · CI/CD 배포 흐름 (움직이는 그림)"/></a></p>
+
+<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/deploy_cicd.png">PNG</a> · <a href="./docs/images/deploy_cicd.svg">SVG</a> · PPT용 영상 <a href="./docs/media/deploy_cicd.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/deploy_cicd.html">인터랙티브 HTML</a></sub>
 
 - **CI** — develop 대상 PR · push마다 Django `manage.py check` + Next.js `build`
 - **CD** — develop push 시 `appleboy/ssh-action`으로 EC2에 접속해 재빌드 (비밀값은 GitHub Secrets `EC2_HOST` · `EC2_USER` · `EC2_SSH_KEY`)
@@ -903,7 +791,7 @@ python manage.py test baseball.tests.test_query_service
 | 이름 | 회고 |
 | --- | --- |
 | [TODO] | |
-| 이형준 | |
+| 임형준 | |
 | 이현준 | |
 | 최인영 | |
 | [TODO] | |
