@@ -527,15 +527,19 @@ SKN34-3rd-5Team/
 
 ## 11. Tech Stack
 
-| 분류 | 기술 |
-| --- | --- |
-| Frontend | Next.js 16.3 · React 19.2 · TypeScript · Tailwind CSS 4 · Kakao Map JS SDK |
-| Backend | Python 3.12 · Django 6.1 · Django REST Framework 3.18 · SimpleJWT · drf-spectacular |
-| LLM · RAG | LangChain 1.x (`create_agent`) · langchain-openai · OpenAI `gpt-5.6-luna` · `text-embedding-3-small` · LangSmith |
-| Database | PostgreSQL 18 · pgvector (HNSW) · sqlglot(SQL 검증) · MinIO |
-| Infra | Docker Compose · Nginx · AWS EC2 · GitHub Actions |
-| External API | TVING · Kakao Local · 한국관광공사 TourAPI · 기상청 · yagu.today |
-| Collaboration | GitHub (Fork & PR) · Notion · Postman · OpenAPI |
+<table>
+  <tr><th>구분</th><th>기술</th></tr>
+  <tr><td align="center"><b>Frontend</b></td><td><img src="https://img.shields.io/badge/Next.js-16.3-000000?logo=nextdotjs&logoColor=white" alt="Next.js 16.3"/> <img src="https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=white" alt="React 19.2"/> <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript"/> <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS 4"/> <img src="https://img.shields.io/badge/Kakao_Map-JS_SDK-FFCD00?logo=kakao&logoColor=white" alt="Kakao Map JS SDK"/></td></tr>
+  <tr><td align="center"><b>Backend</b></td><td><img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12"/> <img src="https://img.shields.io/badge/Django-6.1-092E20?logo=django&logoColor=white" alt="Django 6.1"/> <img src="https://img.shields.io/badge/DRF-3.18-A30000?logo=django&logoColor=white" alt="DRF 3.18"/> <img src="https://img.shields.io/badge/SimpleJWT-000000?logo=jsonwebtokens&logoColor=white" alt="SimpleJWT"/> <img src="https://img.shields.io/badge/drf--spectacular-85EA2D?logo=swagger&logoColor=black" alt="drf-spectacular"/></td></tr>
+  <tr><td align="center"><b>LLM · RAG</b></td><td><img src="https://img.shields.io/badge/LangChain-1.x-1C3C3C?logo=langchain&logoColor=white" alt="LangChain 1.x"/> <img src="https://img.shields.io/badge/langchain--openai-1C3C3C?logo=langchain&logoColor=white" alt="langchain-openai"/> <img src="https://img.shields.io/badge/OpenAI-gpt--5.6--luna-412991" alt="OpenAI gpt-5.6-luna"/> <img src="https://img.shields.io/badge/Embedding-text--embedding--3--small-412991" alt="Embedding text-embedding-3-small"/> <img src="https://img.shields.io/badge/LangSmith-1C3C3C?logo=langchain&logoColor=white" alt="LangSmith"/></td></tr>
+  <tr><td align="center"><b>Database</b></td><td><img src="https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 18"/> <img src="https://img.shields.io/badge/pgvector-HNSW-336791?logo=postgresql&logoColor=white" alt="pgvector HNSW"/> <img src="https://img.shields.io/badge/sqlglot-SQL_%EA%B2%80%EC%A6%9D-5A5A5A" alt="sqlglot SQL 검증"/> <img src="https://img.shields.io/badge/MinIO-C72E49?logo=minio&logoColor=white" alt="MinIO"/></td></tr>
+  <tr><td align="center"><b>Infra</b></td><td><img src="https://img.shields.io/badge/Docker_Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose"/> <img src="https://img.shields.io/badge/Nginx-009639?logo=nginx&logoColor=white" alt="Nginx"/> <img src="https://img.shields.io/badge/AWS_EC2-FF9900" alt="AWS EC2"/> <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?logo=githubactions&logoColor=white" alt="GitHub Actions"/></td></tr>
+  <tr><td align="center"><b>External API</b></td><td><img src="https://img.shields.io/badge/TVING-FF153C" alt="TVING"/> <img src="https://img.shields.io/badge/Kakao_Local-FFCD00?logo=kakao&logoColor=black" alt="Kakao Local"/> <img src="https://img.shields.io/badge/TourAPI-%ED%95%9C%EA%B5%AD%EA%B4%80%EA%B4%91%EA%B3%B5%EC%82%AC-0054A6" alt="TourAPI 한국관광공사"/> <img src="https://img.shields.io/badge/%EA%B8%B0%EC%83%81%EC%B2%AD-API-0072BC" alt="기상청 API"/> <img src="https://img.shields.io/badge/yagu.today-4B5563" alt="yagu.today"/></td></tr>
+  <tr><td align="center"><b>패키지 관리</b></td><td><img src="https://img.shields.io/badge/pip-3775A9?logo=pypi&logoColor=white" alt="pip"/> <img src="https://img.shields.io/badge/npm-CB3837?logo=npm&logoColor=white" alt="npm"/></td></tr>
+  <tr><td align="center"><b>협업</b></td><td><img src="https://img.shields.io/badge/Git-F03C2E?logo=git&logoColor=white" alt="Git"/> <img src="https://img.shields.io/badge/GitHub-Fork_%26_PR-181717?logo=github&logoColor=white" alt="GitHub Fork & PR"/> <img src="https://img.shields.io/badge/Notion-000000?logo=notion&logoColor=white" alt="Notion"/> <img src="https://img.shields.io/badge/Postman-FF6C37?logo=postman&logoColor=white" alt="Postman"/> <img src="https://img.shields.io/badge/OpenAPI-6BA539?logo=openapiinitiative&logoColor=white" alt="OpenAPI"/></td></tr>
+</table>
+
+
 
 ---
 
