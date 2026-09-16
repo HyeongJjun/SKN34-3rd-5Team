@@ -105,7 +105,7 @@
       "id": "pipeline",
       "type": "backend",
       "label": "RAG 파이프라인",
-      "sublabel": "retrieve → agent → parse",
+      "sublabel": "검색 → 도구 계획 → 스트리밍",
       "pos": [
         870,
         100
@@ -300,8 +300,8 @@
       "dot": "cyan",
       "title": "서빙 경로 (요청마다)",
       "items": [
-        "질문 → 검색(Retrieve) → 에이전트 생성(Generate)",
-        "검색 중앙값 9ms, LLM 생성 중앙값 2.6s"
+        "질문 → 검색 → 도구 계획(LLM) → 답변 토큰 스트리밍(SSE)",
+        "검색 중앙값 9ms · 응답 시간 대부분은 LLM"
       ]
     },
     {
