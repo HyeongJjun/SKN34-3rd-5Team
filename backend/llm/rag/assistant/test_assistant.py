@@ -12,6 +12,7 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from . import pipeline, tools
+from ...tools import DOMAIN_TOOL_NAMES
 
 ALL_TABLES = ["TEAM", "STADIUM", "HOME_CONTEXT", "POSTSEASON_STAGE", "GAME", "STANDING_HISTORY", "SEAT_ZONE",
               "TICKET_PRICE", "TICKET_POLICY"]
@@ -132,6 +133,18 @@ class DbToolTest(unittest.TestCase):
         for t in tools.build_tools():
             self.assertFalse([k for k in t.args if k.startswith("_")], t.name)
 
+    def test_agent_gets_all_registered_and_agent_specific_tools_without_duplicates(self):
+        names = [tool.name for tool in tools.build_tools()]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertEqual(
+            set(names),
+            set(DOMAIN_TOOL_NAMES) | {
+                "get_baseball_schema", "execute_baseball_select", "search_kbo_documents",
+                "search_nearby_places", "plan_course", "get_ticket_policy", "search_documents_tool",
+            },
+        )
+        self.assertIs(tools.build_tools()[0].func, tools.get_games)
+
     @override_settings(BASEBALL_QUERY_MAX_ROWS=200, BASEBALL_QUERY_MAX_SQL_BYTES=32768)
     def test_fixed_sql_passes_real_validator(self):
         """고정 SQL 이 성호 검증기(읽기 전용·허용 테이블·허용 함수)를 통과하는지."""
@@ -165,6 +178,21 @@ class OtherToolTest(unittest.TestCase):
         course.answer.assert_called_once_with("친구랑 잠실 경기 전후 코스 짜줘", history=[{"role": "user", "content": "안녕"}],
                                               hint_stadium="JAMSIL")
         self.assertEqual(tools.state()["course"]["places"], [{"name": "a"}])
+
+    def test_nested_plan_course_restores_and_updates_parent_state(self):
+        parent = tools.state()
+
+        class Course:
+            @staticmethod
+            def answer(*_args, **_kwargs):
+                with tools.request_state("CHILD", "child"):
+                    tools.state()["schema_seen"] = True
+                return {"answer": "중첩 코스", "places": [{"name": "식당"}], "sources": [{"doc_id": "nested"}]}
+
+        self.assertEqual(tools.plan_course("잠실 코스", _course=Course), "중첩 코스")
+        self.assertIs(tools.state(), parent)
+        self.assertEqual(parent["course"]["places"], [{"name": "식당"}])
+        self.assertFalse(parent["schema_seen"])
 
 
 class AgentFlowTest(unittest.TestCase):
