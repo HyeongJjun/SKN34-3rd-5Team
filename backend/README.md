@@ -97,11 +97,11 @@ python backend/manage.py check
 python backend/manage.py runserver 0.0.0.0:8000
 ```
 
-마이그레이션은 스키마 준비이며 야구 데이터 적재나 RAG 인덱스 생성을 대신하지 않습니다. 데이터 준비는 각 앱 문서와 [전체 실행 안내](../README.md#11-실행-방법)를 참고합니다.
+마이그레이션은 스키마 준비이며 야구 데이터 적재나 RAG 인덱스 생성을 대신하지 않습니다. 데이터 준비는 각 앱 문서와 [전체 실행 안내](../README.md#12-실행-방법)를 참고합니다.
 
 ### Docker Compose
 
-[Compose 설정](../docker-compose.yml)은 백엔드 시작 시 `migrate` → `provision_baseball_reader --prepare-db-permissions` → `runserver`를 실행합니다. PostgreSQL, MinIO, 메일 설정 및 필수 환경변수를 먼저 준비해야 합니다. 전체 서비스 실행 절차는 [루트 README](../README.md#11-실행-방법)에 있습니다.
+[Compose 설정](../docker-compose.yml)은 백엔드 시작 시 `migrate` → `provision_baseball_reader --prepare-db-permissions` → `runserver`를 실행합니다. PostgreSQL, MinIO, 메일 설정 및 필수 환경변수를 먼저 준비해야 합니다. 전체 서비스 실행 절차는 [루트 README](../README.md#12-실행-방법)에 있습니다.
 
 현재 Compose는 개발용 `runserver`를 사용합니다. 이 실행 예시 자체를 운영 보안·배포 구성이 완료되었다는 의미로 해석하지 않습니다.
 
