@@ -60,6 +60,8 @@ class DomainAllowlistTest(SimpleTestCase):
     def test_dispatcher_club_executes_bounded_tool_loop_and_consumes_result(self):
         model = ToolCallingModel()
         with (
+            # 에이전트 파이프라인 도입(#30) 후 도메인 라우팅은 fallback 경로다 — 실패시켜서 그 경로를 검증한다
+            patch.object(dispatcher.assistant, "answer", side_effect=RuntimeError("agent down")),
             patch.object(domain_tools, "tools_for", return_value=(FakeTool(),)),
             patch.object(club, "llm", return_value=model),
             patch.object(club, "embed", return_value=[0.0]),
@@ -69,7 +71,7 @@ class DomainAllowlistTest(SimpleTestCase):
             result = dispatcher.answer("LG 선수 알려줘")
         self.assertEqual(model.bound_names, ("search_players",))
         self.assertIn("도구 최신 선수", result["answer"])
-        self.assertTrue(result["route"].startswith("club>"))
+        self.assertTrue(result["route"].startswith("agent:error>club>"))
 
     def test_club_structured_answer_prefers_canonical_tool_result_over_old_rag(self):
         current = {"actual_date": "2026-09-16", "items": [{
@@ -201,20 +203,29 @@ class DomainAllowlistTest(SimpleTestCase):
     def test_saved_public_course_lookup_bypasses_itinerary_slot_guard(self):
         model = ToolCallingModel("search_courses", {"query": "잠실"})
         tool = FakeTool("search_courses", {"items": [{"title": "공개 저장 코스"}]})
-        with patch.object(domain_tools, "tools_for", return_value=(tool,)), patch.object(course, "llm", return_value=model):
+        with (
+            # 도메인 fallback 경로 검증 — 에이전트 파이프라인(#30)을 실패시킨다
+            patch.object(dispatcher.assistant, "answer", side_effect=RuntimeError("agent down")),
+            patch.object(domain_tools, "tools_for", return_value=(tool,)),
+            patch.object(course, "llm", return_value=model),
+        ):
             result = dispatcher.answer("저장된 공개 코스 찾아줘")
         self.assertIn("공개 저장 코스", result["answer"])
-        self.assertEqual(result["route"], "course>course:public_lookup")
+        self.assertEqual(result["route"], "agent:error>course>course:public_lookup")
         self.assertEqual(result["places"], [])
         self.assertIsNone(result["coursePayload"])
 
         course_id = "12345678-1234-4123-8123-123456789abc"
         detail_model = ToolCallingModel("get_course", {"course_id": course_id})
         detail_tool = FakeTool("get_course", {"item": {"id": course_id, "title": "공개 상세 코스"}})
-        with patch.object(domain_tools, "tools_for", return_value=(detail_tool,)), patch.object(course, "llm", return_value=detail_model):
+        with (
+            patch.object(dispatcher.assistant, "answer", side_effect=RuntimeError("agent down")),
+            patch.object(domain_tools, "tools_for", return_value=(detail_tool,)),
+            patch.object(course, "llm", return_value=detail_model),
+        ):
             detail = dispatcher.answer(f"{course_id} 코스 상세 알려줘")
         self.assertIn("공개 상세 코스", detail["answer"])
-        self.assertEqual(detail["route"], "course>course:public_lookup")
+        self.assertEqual(detail["route"], "agent:error>course>course:public_lookup")
 
     def test_prediction_question_bypasses_schedule_shortcut_and_consumes_fan_vote_tool(self):
         model = ToolCallingModel("get_prediction_games", {"game_date": "2026-09-16", "team_code": "LG"})
@@ -223,6 +234,8 @@ class DomainAllowlistTest(SimpleTestCase):
                        "fan_vote_notice": "실제 승리 확률이 아닌 팬 투표"}],
         })
         with (
+            # 도메인 fallback 경로 검증 — 에이전트 파이프라인(#30)을 실패시킨다
+            patch.object(dispatcher.assistant, "answer", side_effect=RuntimeError("agent down")),
             patch.object(domain_tools, "tools_for", return_value=(tool,)),
             patch.object(club, "llm", return_value=model),
             patch.object(club.structured, "answer", side_effect=AssertionError("schedule shortcut used")),
@@ -232,4 +245,4 @@ class DomainAllowlistTest(SimpleTestCase):
         ):
             result = dispatcher.answer("오늘 LG 경기 팬 투표 현황 알려줘")
         self.assertIn("실제 승리 확률이 아닌 팬 투표", result["answer"])
-        self.assertTrue(result["route"].startswith("club>"))
+        self.assertTrue(result["route"].startswith("agent:error>club>"))

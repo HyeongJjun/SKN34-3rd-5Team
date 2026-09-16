@@ -25,7 +25,8 @@ class BaseballQueryServiceTest(SimpleTestCase):
     def test_all_19_models_and_foreign_keys_are_in_schema(self):
         schema = BaseballQueryRepository().get_schema()
         tables = {table["name"]: table for table in schema["tables"]}
-        self.assertEqual(len(tables), 19)
+        # 직관 도메인 19개 + 외부 제공자 통합(bef6de9)으로 늘어난 baseball_* 9개
+        self.assertEqual(len(tables), 28)
         self.assertEqual(schema["schema"], "public")
         self.assertEqual(tables["GAME"]["quoted_name"], '"GAME"')
         game_columns = {column["name"]: column for column in tables["GAME"]["columns"]}
