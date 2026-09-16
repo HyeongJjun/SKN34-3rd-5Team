@@ -167,14 +167,13 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ### 3.3 문제 정의
 
-<!-- 배경 → 우리가 본 불편함 → 그래서 필요한 것 -->
-
 | 사용자가 겪는 불편 | 현재 상황 |
 | --- | --- |
 | 구장 정보가 흩어져 있음 | 반입 규정 · 주차 · 좌석 · 재입장 규정이 **10개 구단 홈페이지에 제각각** 있고, 일부는 공식 자료가 없음 |
 | 맛집 · 코스는 따로 찾아야 함 | 구장 정보는 구단 사이트, 주변 맛집은 지도 앱, 일정 · 순위는 포털에서 따로 확인 |
 | 초보 팬은 무엇을 물어야 할지 모름 | "라팍", "챔필", "엔팍" 같은 별칭과 구단마다 다른 좌석 등급명 |
 | 비공식 정보의 신뢰도 | 블로그 · 커뮤니티 정보와 공식 정보가 섞여 있어 믿고 따르기 어려움 |
+| 일반 LLM의 한계 | 오늘 날짜 · 순위 · 가격을 지어내거나(환각), 구장별 규정 차이를 모름 |
 
 > **→ 구장 정보, 경기 데이터, 주변 장소를 한 대화에서 묻고, 근거 등급까지 알려주는 직관 안내 챗봇이 필요합니다.**
 
@@ -186,23 +185,24 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | 📊 경기 데이터 조회 | 일정 · 순위 · 티켓 가격을 **읽기 전용 DB 조회 도구**로 정확히 답변 |
 | 🗺️ 직관 코스 추천 | 경기 전 맛집 → 구장 → 경기 후 코스를 만들고 **카카오맵에 자동 표시** |
 | 🏷️ 근거 등급 표시 | 공식 / 공식 확인 전 / 비공식 / 외부 서비스 정보에 따라 말투를 다르게 |
-| 👥 커뮤니티 · 코스 공유 | [TODO] 게시판, 승부 예측, 코스 저장 · 공유 |
+| 👥 커뮤니티 · 코스 공유 | 자유 · 구단별 게시판, 승부 예측, 코스 저장 · 좋아요 · 공유 (JWT 회원) |
 
 ### 3.5 기대 효과
 
-- [TODO] 초보 팬의 직관 준비 시간 단축
-- [TODO] 원정 팬의 체류형 소비를 구장 주변 상권으로 연결
-- [TODO] 공식 · 비공식 정보를 구분해 잘못된 안내로 인한 현장 혼란 감소
+- **직관 준비 시간 단축** — 구단 홈페이지 · 지도 앱 · 포털을 오가던 확인을 대화 한 번으로
+- **원정 팬 소비를 구장 주변으로 연결** — 경기 전후 식당 · 카페 · 명소를 경기 시간에 맞춰 제안
+- **잘못된 안내 감소** — 공식 · 비공식을 구분하고, 모르는 것은 모른다고 답해 현장 혼란을 줄임
 
 ---
 
 ## 4. 정책 및 신뢰성 설계
 
 ### 4.1 데이터 수집 정책
-<!-- robots.txt 확인 결과, 크롤링 제외 도메인, 수동 조사로 대체한 항목 -->
-- [TODO] KBO 공식 홈페이지는 robots.txt 확인 후 수집 대상에서 제외
-- [TODO] 구단 홈페이지별 접근 가능 여부 개별 확인
-- [TODO] 응원가 등 저작권 이슈 데이터 제외
+
+- **KBO 공식 홈페이지(koreabaseball.com)는 수집하지 않음** — robots.txt 확인 후 제외. 일정 · 순위는 TVING API, 예매 정책은 yagu.today(robots 허용)로 대체
+- **구단 홈페이지 10곳은 접근 가능 여부를 개별 확인** — 자동 수집이 막힌 곳은 팀원이 직접 보고 옮겨 적는 수동 조사로 대체하고 출처 URL · 확인일을 남김
+- **저작권 이슈 데이터 제외** — 응원가 가사, 선수 개인 기록 TOP5는 수집 범위에서 뺌
+- **원본 보존** — `data/raw/`는 어떤 스크립트도 덮어쓰지 않고, 결과는 `data/preprocessed/`에만 저장
 
 ### 4.2 근거 등급 (답변 신뢰성)
 
@@ -213,9 +213,19 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | UNOFFICIAL | 블로그 · SNS 조사 | "비공식 정보라 현장과 다를 수 있습니다"로 시작 |
 | THIRD_PARTY | 카카오 등 외부 API | "외부 서비스 기준 정보라 방문 전 확인을 권합니다" |
 
+- 확정되지 않은 행은 **인덱싱 단계에서 본문에도** "공식 확인 전 정보" 문구를 넣어, 프롬프트 규칙과 함께 이중으로 막습니다.
+- 인덱싱된 3,839청크 중 OFFICIAL 계열 32.6%, THIRD_PARTY 52.4%, UNOFFICIAL 13.0%입니다.
+
 ### 4.3 DB 조회 안전장치
-<!-- 읽기 전용 계정, SQL 검증기, 타임아웃, 최대 행 수 -->
-- [TODO]
+
+| 장치 | 내용 |
+| --- | --- |
+| 읽기 전용 계정 | 챗봇은 `BASEBALL_DB_USER` 전용 계정으로만 조회 (`provision_baseball_reader`가 컨테이너 시작 때 권한 준비) |
+| SQL 검증기 | sqlglot으로 파싱해 **SELECT 1문장**, 허용된 테이블 · 함수만 통과 (`pg_sleep` 등 22개 패턴 거부 테스트) |
+| 실행 한도 | 최대 200행 · 3초 타임아웃 · 락 대기 1초 · SQL 32KB · 응답 1MB |
+| 고정 SQL 우선 | 일정 · 순위 · 가격 · 예매정책은 **코드에 고정한 SELECT**를 쓰는 전용 도구로 조회 |
+| 자유 SQL 제한 | 전용 도구로 안 되는 질문만, **스키마 조회 도구를 먼저 부른 경우에만** `execute_baseball_select` 허용 (최대 50행) |
+| 답변 규칙 | SQL · 테이블명 · 도구 이름 같은 내부 용어는 답변에 쓰지 않음 |
 
 ### 4.4 코스 장소 선정 기준
 
@@ -238,96 +248,272 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ## 5. 수집된 데이터 및 데이터 전처리
 
-> 🔴 필수 산출물 · 상세 문서: [`data/preprocessed/README.md`](./data/preprocessed/README.md)
+> 🔴 필수 산출물 · 상세 문서: [`docs/deliverables/01_데이터수집_전처리.md`](./docs/deliverables/01_데이터수집_전처리.md) · [`data/preprocessed/README.md`](./data/preprocessed/README.md)
 
 ### 5.1 데이터 출처
 
 | 출처 | 수집 방식 | 활용 | 비고 |
 | --- | --- | --- | --- |
-| 구단 공식 홈페이지 | 수동 조사 → xlsx | 좌석 · 가격 · 교통 · 편의시설 | OFFICIAL |
-| TVING 내부 API | 스크립트 | 팀 순위 · 경기 일정 | 매일 갱신 |
-| yagu.today | 크롤링 | 예매 정책 | |
-| Kakao Local API | REST API | 구장 반경 음식점 · 카페 · 명소 | THIRD_PARTY |
-| 자리어때 | [TODO] | 구장 내 먹거리 · 편의시설 위치 | |
-| 블로그 · SNS | 수동 조사 | 재입장 규정 | UNOFFICIAL |
+| 구단 공식 홈페이지 | 수동 조사 → xlsx → 정규화 스크립트 | 좌석 · 가격 · 교통 · 편의시설 · 부가콘텐츠 | OFFICIAL |
+| TVING 내부 API | 스크립트 (`kbo_schedule.py`, `kbo_standing.py`) | 팀 순위 · 경기 일정 | 매일 갱신 |
+| yagu.today | 크롤링 → 문장 파싱 (`parse_ticket_policy.py`) | 예매 정책 | THIRD_PARTY |
+| Kakao Local API | REST API (`collect_kakao_places.py`, 반경 2.5km) | 구장 반경 음식점 · 카페 · 명소, 구장 좌표 | THIRD_PARTY |
+| 자리어때 | 수동 조사 → 정규화 | 구장 내 먹거리 · 편의시설(굿즈샵 · 포토부스 · 물품보관함) 위치 | UNOFFICIAL |
+| 블로그 · SNS | 수동 조사 → JSON | 재입장 규정 | UNOFFICIAL |
 
 ### 5.2 데이터 현황
 
-<!-- data/preprocessed CSV 행 수 표. 최종 develop 기준으로 다시 세서 채우세요. -->
-
 | 파일 | 행 수 | 카테고리 |
-| --- | --- | --- |
-| [TODO] | | |
+| --- | ---: | --- |
+| `kbo_schedule_full.csv` | 782 | SCHEDULE |
+| `구장티켓가격.csv` | 740 | PRICE |
+| `external_places.csv` | 1,008 | FOOD_OUT 405 · CAFE 405 · SPOT 198 |
+| `구장먹거리_위치_자리어때.csv` | 385 | FOOD_IN |
+| `구장먹거리_공식매점.csv` | 291 | (보존 · 인덱싱 제외) |
+| `kbo_ticket_policy_structured.csv` | 244 | TICKET_POLICY |
+| `구장편의시설.csv` / `구장편의시설_위치_자리어때.csv` | 207 / 100 | FACILITY |
+| `구장좌석구역.csv` / `구장좌석도.csv` / `구장좌석경험.csv` | 192 / 10 / 8 | SEAT |
+| `구장부가콘텐츠_공식.csv` | 68 | CONTENT |
+| `구장교통정보.csv` / `구장잔여정보_좌석주차버스.csv` | 43 / 14 | TRANSPORT |
+| `kbo_standing.csv` / `kbo_standing_history.csv` | 10 / 10 | STANDING |
+| `구장운영정보.csv` | 9 | OPERATION |
+| `stadium_coordinates.csv` | 9 | STADIUM |
+| `docs/KBO_반입물품_재입장규정.json` | 공통 1 + 10구단 | CARRY_IN · REENTRY |
+| `docs/기초규칙_요약본.md` | 11청크 | RULE |
+| 기타 (`구장편의시설_보류이력` 8, `3차_신규확보데이터` 14, `kbo_schedule_postseason_tbd` 4) | 26 | 참조용 · 인덱싱 제외 |
 
 ### 5.3 전처리 파이프라인
 
-<p align="center"><img src="./docs/images/diagram_data_pipeline.png" width="90%"/></p>
+```mermaid
+flowchart LR
+    subgraph RAW["data/raw · 원본 보존"]
+        R1[구장정보.xlsx]
+        R2[구장먹거리,컨텐츠.xlsx]
+        R3[보완 조사 xlsx 3종]
+        R4[kbo_ticket_policy.csv]
+        R5[team_stadium_code_map.csv]
+    end
+    subgraph CRAWL["backend/crawling"]
+        C1[TVING 일정 · 순위]
+        C2[카카오 로컬]
+    end
+    subgraph PRE["backend/preprocessing"]
+        P1[코드 정규화<br/>team_stadium_map]
+        P2[시트별 정규화<br/>normalize_*]
+        P3[문장 → 구조화<br/>parse_ticket_policy]
+        P4[content 컬럼<br/>add_common_columns]
+    end
+    RAW --> PRE --> OUT[("data/preprocessed<br/>CSV 21종")]
+    CRAWL --> OUT
+    OUT --> IDX[build_index → pgvector]
+    OUT --> DB[import_baseball_data → 야구 DB]
+```
 
 ### 5.4 전처리 규칙
-- [TODO] 원본(`data/raw`)은 수정하지 않고 결과만 `data/preprocessed`에 저장
-- [TODO] 팀 코드 표준화 (LG, DOOSAN, KIWOOM, SSG, KT, HANWHA, SAMSUNG, KIA, LOTTE, NC)
-- [TODO] CSV는 `utf-8-sig`, 모든 행에 `status` · `evidence_type` 태깅
+
+- 원본(`data/raw`)은 수정하지 않고 결과만 `data/preprocessed`에 저장
+- 구장 코드 9개 표준화: `JAMSIL · GOCHEOK · MUNHAK · SUWON · DAEJEON · DAEGU · GWANGJU · SAJIK · CHANGWON` (인천은 `MUNHAK`)
+- 팀 코드 표준화: `LG, DOOSAN, KIWOOM, SSG, KT, HANWHA, SAMSUNG, KIA, LOTTE, NC`
+- CSV는 `utf-8-sig`, 모든 행에 `status` · `evidence_type` 태깅 (세부값은 `evidence_subtype`에 보존)
+- 가격 · 면수 · 시각은 **원문 그대로** (계산 · 반올림 금지), 좌석 등급명도 구단 표기 그대로 유지
+- 보완 조사 결과는 오버레이 함수로 적용 (예: 대구 "대공원역" → "수성알파시티역", 2024 고시)
+- `price_krw=0`(무료 요금) · NC 동적 가격 스냅샷 · 수치가 다른 주차 정보는 오류로 지우지 않고 답변 규칙으로 처리
 
 ### 5.5 청킹 · 임베딩
 
 | 항목 | 설정 |
 | --- | --- |
-| 청킹 방식 | [TODO] 1행 = 1청크 (행 → 자연어 문장) |
-| 임베딩 모델 | [TODO] |
-| 벡터 DB | [TODO] |
-| 총 청크 수 | [TODO] |
-| `doc_id` 규칙 | [TODO] |
+| 청킹 방식 | **1행 = 1청크**, 규칙 템플릿으로 `[구장 · 팀] 항목: 값 / …` 형태의 자기완결 텍스트 생성 (평균 218자). 반입 · 재입장 JSON은 코드값을 문장으로 변환, 기초규칙 md만 제목 단위 분할. LLM 문장화는 쓰지 않음 |
+| 임베딩 모델 | OpenAI `text-embedding-3-small` (1536차원) · 100건씩 · 500건마다 체크포인트 |
+| 벡터 DB | PostgreSQL 18 + pgvector · `llm_documentchunk` · HNSW (`m=16`, `ef_construction=64`, cosine) · 검색 시 `ef_search=200` |
+| 총 청크 수 | **3,839** (17개 카테고리) |
+| `doc_id` 규칙 | `{CATEGORY}_{SCOPE}_{자연키}` (예: `PRICE_SAJIK_…_WEEKEND_ADULT`, `CARRY_IN_COMMON_COMMON`). 자연키가 겹치는 17행은 `_2`, `_3` |
 
 ---
 
 ## 6. RAG · 에이전트 파이프라인 설계
 
-> 🔴 필수 산출물 · 코드: [`backend/llm/rag/`](./backend/llm/rag/), 인덱싱: [`build_index.py`](./backend/llm/management/commands/build_index.py)
+> 🔴 필수 산출물 · 코드: [`backend/llm/rag/`](./backend/llm/rag/), 인덱싱: [`build_index.py`](./backend/llm/management/commands/build_index.py) · 상세: [`docs/deliverables/03_RAG_벡터DB_연동코드.md`](./docs/deliverables/03_RAG_벡터DB_연동코드.md)
 
 ### 6.1 전체 흐름
 
-<p align="center"><img src="./docs/images/diagram_chat_pipeline.png" width="90%"/></p>
+```mermaid
+flowchart LR
+    Q([질문]) --> CS[ChatService<br/>chat_chain]
+    CS --> D{dispatcher<br/>야구 관련?}
+    D -- 무관 --> F[고정 안내]
+    D -- 관련 --> R["① retrieve<br/>구장·카테고리 필터 + HNSW<br/>18개 → 키워드 재정렬 → 6개"]
+    R --> P["② build_prompt<br/>규칙 + 문서 + 오늘 날짜<br/>+ 화면 구장 + 대화 8개"]
+    P --> A["③ agent<br/>create_agent"]
+    A -. 도구 .-> T1[("야구 DB<br/>읽기 전용")]
+    A -. 도구 .-> T2[문서 추가 검색]
+    A -. 도구 .-> T3[카카오 주변 장소]
+    A -. 도구 .-> T4[코스 짜기]
+    A --> O[④ parse_output]
+    O --> PF[persona.finalize<br/>말투 · 경고 문구]
+    A -- 실패 --> FB[기존 도메인<br/>course · nearby · venue · club]
+    FB --> PF
+    PF --> ANS([답변 + 근거 + 지도 places])
+```
 
 ```
-[TODO] 질문 → dispatcher → retrieve → build_prompt → agent(도구 호출) → parse_output → persona
+질문 → dispatcher(야구 무관만 차단, LLM 0회)
+     → retrieve(임베딩 1회) → build_prompt → agent(LLM 1~5회) → parse_output
+     → persona.finalize(말투 통일, LLM 0회)
 ```
+
+`chain = RunnableLambda(retrieve) | RunnableLambda(build_prompt) | agent | RunnableLambda(parse_output)`
+
+- **스위치 없음** — 모든 질문이 이 한 줄로 갑니다. 테스트 러너 안에서만 꺼져 기존 회귀 테스트를 보호합니다.
+- **실패 대체** — 에이전트가 예외를 내거나 빈 답을 주면 같은 질문을 기존 도메인 모듈로 다시 답합니다 (`route`에 `agent:error>` 기록).
 
 ### 6.2 에이전트 도구
 
 | 도구 | 읽는 곳 | 용도 |
 | --- | --- | --- |
-| [TODO] | | |
+| `get_games` | 야구 DB (고정 SQL) | 팀 · 구장 · 기간 · 상태별 경기 목록과 **전체 개수** |
+| `get_standings` | 야구 DB | 지정일 이전 가장 최근 순위 |
+| `get_ticket_prices` | 야구 DB | 구단 좌석 가격, 구역 키워드, 싼 순 |
+| `get_ticket_policy` | 야구 DB | 예매 오픈 · 매수 제한 · 예매처 |
+| `get_baseball_schema` → `execute_baseball_select` | 야구 DB 19개 테이블 | 위 4개로 안 되는 조회만. 스키마를 먼저 봐야 실행, 최대 50행 |
+| `search_kbo_documents` | pgvector | 다른 구장 · 주제 추가 검색 (근거 등급 포함) |
+| `search_nearby_places` | Kakao Local (백엔드) | 숙박 · 산책 · 실내 놀거리 · 편의점 |
+| `plan_course` | course 도메인 | 경기 전후 코스 → 지도 · 카드 |
 
 ### 6.3 프롬프트 설계
-<!-- 시스템 규칙, 근거 등급별 말투, 숫자 원문 보존 등 -->
-- [TODO]
+
+- **참고 문서 먼저** — 검색 결과 6개를 `[번호] 등급 · 구장 · 분류` 머리말과 함께 넣음
+- **정본 우선순위** — 일정 · 순위 · 결과 · 가격은 참고 문서보다 **DB 도구 결과를 믿도록** 명시, "몇 경기"는 도구의 `count`를 그대로 사용
+- **지어내기 금지** — 경기 시각 · 가격 · 점수 · 순위 · 주소 · 장소 이름은 문서나 도구 결과에 있는 것만
+- **되묻기 · 고정 답변** — 구장이 필요한데 없으면 되묻고, 취소 · 환불은 "예매처에 문의" 고정 문구
+- **근거 등급별 말투** — UNOFFICIAL · UNCERTAIN · THIRD_PARTY면 마지막 줄에 확인 안내
+- **오늘 날짜 · 화면 구장 주입** — "다음 경기", "오늘" 같은 상대 표현을 바르게 계산
+- **질문 유형 힌트** — 코스 · 주변 장소 질문이면 어떤 도구를 먼저 쓸지 한 줄 힌트 (분기가 아니라 힌트)
+- **내부 용어 숨김** — SQL · 테이블명 · 도구 이름 · "참고 문서" 같은 말은 답변에 쓰지 않음
 
 ### 6.4 코스 추천 흐름
 
-<p align="center"><img src="./docs/images/diagram_course_sequence.png" width="90%"/></p>
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 사용자
+    participant AG as assistant agent
+    participant CO as course.answer
+    participant DB as 야구 DB · pgvector
+    participant LLM as OpenAI
+    participant FE as 프론트 지도
+
+    U->>AG: "친구랑 잠실 경기 전후 걸어서 코스 짜줘"
+    AG->>CO: plan_course(요청 문장)
+    CO->>CO: ① 슬롯 — 구장 · 동행 · 취향 · 이동수단 · 여유시간 (LLM 0회)
+    CO->>DB: ② 경기 조회 — 날짜 · 시작 시각 · 상대
+    CO->>LLM: ③ "경기 전용 / 경기 후용" 쿼리 2개 한 번에 임베딩
+    CO->>DB: 카테고리별 벡터 검색 (음식점 · 카페 · 명소)
+    CO->>CO: 동행 제외 규칙 · 취향 가산 · 반경으로 후보 거르기
+    CO->>LLM: ④ 후보 P1..Pn + 방위 · 거리 → 키만 고르기 (LLM 1회)
+    LLM-->>CO: JSON {place_key, phase, reason, intro}
+    CO->>CO: ⑤ 동선 — 총 도보가 길면 가까운 후보로 교체
+    CO->>CO: ⑥ 시간표 — 경기 시작에서 역산한 도착 · 출발 시각
+    CO->>DB: ⑦ 키 → DB 값(이름 · 좌표 · 주소 · 카카오 id)으로 places[] 조립
+    CO-->>AG: answer + places + coursePayload + travel
+    AG-->>FE: 답변과 함께 places 전달
+    FE-->>U: 지도에 방문 순서 자동 표시 · 저장 버튼
+```
+
+> **좌표 환각이 0인 이유**: LLM에게서 받는 것은 `place_key · phase · reason · intro`뿐이고, 이름 · 좌표 · 주소 · 시각 · 거리는 전부 DB 값이거나 코드가 계산한 값입니다.
+
+### 6.5 RAG 성능 원칙 — 느리면 인덱싱과 런타임부터
+
+| 원칙 | 우리 구현 | 상태 |
+| --- | --- | :---: |
+| 문서 로딩 · 청킹 · 임베딩 · 벡터 저장은 **요청마다 하지 않는다** | `build_index` 관리 명령으로만 수행, 서버는 적재된 테이블을 읽기만 함 | ✅ |
+| 최초 전체 인덱싱 후 **바뀐 데이터만 증분** | 입력 fingerprint가 같으면 임베딩 체크포인트를 재사용해 API를 다시 부르지 않음. 테이블 적재는 아직 전체 교체 | 🔶 부분 |
+| 요청 시에는 **검색 + 생성만** | `retrieve → agent`만 실행. 임베딩 클라이언트 · 체인은 서버 기동 후 한 번만 만들어 재사용 | ✅ |
+| 느릴 때 **검색 / 리랭크 / 생성 시간을 따로** 잰다 | `retrieval_ms` · `llm_ms` · `timing.agent_ms` 기록, LangSmith로 질문 1건 = 트리 1개 | ✅ |
+
+**실측 (club 골든셋 55문항, 2026-09-14)**
+
+| 구간 | 중앙값 | 평균 | 최대 |
+| --- | ---: | ---: | ---: |
+| 검색 (필터 + HNSW + 키워드 재정렬) | **9 ms** | 10 ms | 29 ms |
+| LLM 생성 | **2,643 ms** | 2,556 ms | 10,971 ms |
+| 전체 | 2,661 ms | 2,567 ms | 10,993 ms |
+
+➡️ 응답 시간의 **99% 이상이 LLM 생성**입니다. 벡터DB는 병목이 아니므로, 속도 개선은 정해진 질문을 DB 결과로 바로 답하기 · 도구 호출 수 제한(최대 4회) · 모델 설정 조정 쪽에서 합니다. 에이전트 파이프라인은 도구를 부르는 만큼 LLM을 다시 호출해 3 ~ 7초가 걸립니다.
 
 ---
 
 ## 7. 시스템 아키텍처
 
-> 🔴 필수 산출물
+> 🔴 필수 산출물 · 상세: [`docs/deliverables/02_시스템아키텍처.md`](./docs/deliverables/02_시스템아키텍처.md)
 
 <p align="center"><img src="./docs/images/diagram_system_architecture.png" width="95%"/></p>
 
-<!-- 인터랙티브 버전: docs/diagrams/*.html (브라우저로 열기) -->
+<!-- 인터랙티브 버전: docs/architecture/system_architecture.html (내려받아 브라우저로 열기) -->
+
+| 계층 | 구성 | 역할 |
+| --- | --- | --- |
+| Client | Next.js 16 · React 19 · Kakao Map SDK | 채팅, 지도 · 코스, 일정 · 순위, 커뮤니티 화면 |
+| Gateway | Nginx `:80` | `/` → frontend, `/api/` → backend |
+| API | Django 6.1 · DRF · SimpleJWT | 인증, 채팅(SSE), 코스, 커뮤니티, 야구 데이터 API |
+| LLM | LangChain `create_agent` · OpenAI | 검색 → 프롬프트 → 에이전트(도구 호출) → 파서 |
+| Vector DB | PostgreSQL 18 + pgvector | 3,839개 문서 청크 + 메타데이터(JSONB) |
+| RDB | PostgreSQL 18 (같은 인스턴스) | 야구 19개 테이블 · 회원 · 채팅 · 코스. 챗봇은 읽기 전용 계정으로만 조회 |
+| Storage · Mail | MinIO · Mailpit | 커뮤니티 이미지, 비밀번호 재설정 메일 |
+| Ops | Docker Compose · GitHub Actions → EC2 · LangSmith | 빌드 · 배포, LLM 호출 추적 |
+
+**인덱싱과 서빙을 분리**했습니다. 무거운 작업(파일 로딩 · 청킹 · 임베딩 · 적재)은 오프라인 `build_index`가 한 번 하고, 요청 때는 검색과 생성만 합니다.
 
 ---
 
 ## 8. 데이터베이스 설계
 
-<p align="center"><img src="./docs/images/erd.png" width="90%"/></p>
+```mermaid
+erDiagram
+    Document ||--o{ DocumentChunk : has
+    Document {
+        int id PK
+        string title
+        string source
+    }
+    DocumentChunk {
+        int id PK
+        int document_id FK
+        text content
+        int chunk_index
+        jsonb metadata "doc_id, category, stadium_code, status, evidence_type"
+        vector embedding "1536, HNSW cosine"
+    }
+    ChatSession ||--o{ ChatMessage : has
+    ChatSession ||--o{ ChatTurn : has
+    ChatSession {
+        int id PK
+        int user_id FK
+        string title
+    }
+    ChatMessage {
+        int id PK
+        int session_id FK
+        int sequence_no
+        string role "human or ai"
+        text message
+    }
+    ChatTurn {
+        uuid id PK
+        int session_id FK
+        text question
+        string status "pending, completed, stopped"
+    }
+```
 
 | 영역 | 주요 테이블 |
 | --- | --- |
-| 벡터 검색 | [TODO] `llm_document`, `llm_documentchunk` |
-| 채팅 | [TODO] |
-| 야구 데이터 | [TODO] |
-| 회원 · 커뮤니티 · 코스 | [TODO] |
+| 벡터 검색 | `llm_document`, `llm_documentchunk` (pgvector · HNSW) |
+| 채팅 | `ChatSession`, `ChatMessage`, `ChatTurn` (답변 중단 · 확정 처리) |
+| 야구 데이터 | `GAME`, `STANDING_HISTORY`, `TICKET_PRICE`, `SEAT_ZONE`, `TICKET_POLICY` 등 19개 (`baseball` 앱) |
+| 회원 · 커뮤니티 · 코스 | 회원 · JWT blacklist, 게시글 · 초안 · 이미지 · 승부 예측, `Course` · `CourseStop` · 장소 · 길찾기 캐시 |
+
+<!-- ERD 이미지가 준비되면 docs/images/erd.png 로 넣고 위 다이어그램과 바꿔도 됩니다. -->
 
 ---
 
@@ -335,23 +521,40 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ```text
 SKN34-3rd-5Team/
-├── backend/            # [TODO]
-│   ├── accounts/
-│   ├── baseball/
-│   ├── community/
+├── backend/                     # Django
+│   ├── config/                  # settings · urls
+│   ├── accounts/                # 회원 · JWT
+│   ├── baseball/                # 야구 정형 데이터 · SQL 조회 서비스(검증기)
+│   ├── community/               # 게시판 · 이미지 · 승부 예측
+│   ├── travel/                  # 코스 · 장소 · 길찾기 · 관광 · 날씨
+│   ├── tving/                   # 당일 경기 · 선수 정보
 │   ├── llm/
+│   │   ├── chat_service.py      # 채팅 서비스 (RAG 체인 연결 지점)
+│   │   ├── models.py            # DocumentChunk (pgvector · HNSW)
+│   │   ├── management/commands/ # build_index · check_index · rag_check · langsmith_eval
 │   │   └── rag/
-│   ├── travel/
-│   ├── crawling/
-│   └── preprocessing/
-├── frontend/           # [TODO]
+│   │       ├── pipeline.py      # 백엔드 진입점
+│   │       ├── dispatcher.py    # 범위 판단 · 실패 시 대체 경로
+│   │       ├── persona.py       # 말투 · 경고 문구
+│   │       ├── assistant/       # ★ retrieve → prompt → agent → parse
+│   │       ├── club/ venue/     # 도메인별 검색 · 프롬프트 (대체 경로)
+│   │       ├── course/          # 직관 코스 추천
+│   │       └── nearby/          # 카카오 주변 장소
+│   ├── crawling/                # TVING 일정 · 순위, 카카오 수집
+│   └── preprocessing/           # 정규화 · 구조화 스크립트
+├── frontend/                    # Next.js 16 (App Router)
 ├── data/
-│   ├── raw/
-│   └── preprocessed/
+│   ├── raw/                     # 원본 (자동으로 덮어쓰지 않음)
+│   └── preprocessed/            # 전처리 결과 CSV 21종
 ├── docs/
-├── rag_test/           # [TODO]
+│   ├── deliverables/            # 🔴 필수 산출물 문서 4종
+│   ├── architecture/            # 아키텍처 인터랙티브 HTML · 원본 JSON
+│   ├── images/                  # README 이미지
+│   └── test_results/            # 최종 평가 결과 CSV · 골든셋
+├── rag_test/                    # 골든셋 평가 스크립트 (STEP 1~5)
+├── contracts/openapi.yaml       # API 계약
 ├── nginx/
-├── .github/workflows/
+├── .github/workflows/           # CI/CD
 └── docker-compose.yml
 ```
 
@@ -361,105 +564,207 @@ SKN34-3rd-5Team/
 
 | 분류 | 기술 |
 | --- | --- |
-| Frontend | [TODO] |
-| Backend | [TODO] |
-| LLM · RAG | [TODO] |
-| Database | [TODO] |
-| Infra | [TODO] |
-| External API | [TODO] |
-| Collaboration | [TODO] |
+| Frontend | Next.js 16.3 · React 19.2 · TypeScript · Tailwind CSS 4 · Kakao Map JS SDK |
+| Backend | Python 3.12 · Django 6.1 · Django REST Framework 3.18 · SimpleJWT · drf-spectacular |
+| LLM · RAG | LangChain 1.x (`create_agent`) · langchain-openai · OpenAI `gpt-5.6-luna` · `text-embedding-3-small` · LangSmith |
+| Database | PostgreSQL 18 · pgvector (HNSW) · sqlglot(SQL 검증) · MinIO |
+| Infra | Docker Compose · Nginx · AWS EC2 · GitHub Actions |
+| External API | TVING · Kakao Local · 한국관광공사 TourAPI · 기상청 · yagu.today |
+| Collaboration | GitHub (Fork & PR) · Notion · Postman · OpenAPI |
 
 ---
 
 ## 11. 실행 방법
 
 ```bash
-# 1. 환경변수
-cp .env.example .env   # [TODO] 필수 키 목록
+# 1. 환경변수 (docker compose 는 루트 .env 만 읽습니다)
+cp .env.example .env
+#    필수: OPENAI_API_KEY, EMBEDDING_MODEL, DB_HOST/PORT/NAME/USER/PASSWORD,
+#          BASEBALL_DB_USER/PASSWORD, CHAT_CHECKPOINT_SIGNING_KEY,
+#          MINIO_ROOT_PASSWORD, MAILPIT_UI_AUTH
+#    지도·장소: NEXT_PUBLIC_KAKAO_MAP_KEY, KAKAO_REST_API_KEY (+ 선택 TOUR_API_KEY, KMA_*)
+#    추적(선택): LANGSMITH_TRACING=true, LANGSMITH_API_KEY
 
 # 2. 컨테이너 실행
 docker compose up -d --build
 
-# 3. RAG 인덱스 생성
+# 3. RAG 인덱스 생성 (최초 1회, 약 3,839청크)
+docker compose exec backend python manage.py build_index --dry-run   # 청크만 확인 (비용 0)
 docker compose exec backend python manage.py build_index
+docker compose exec backend python manage.py check_index
 
 # 4. 접속
-# [TODO]
+#   http://localhost        Nginx (프론트 + /api)
+#   http://localhost:3000   Next.js
+#   http://localhost:8000   Django
+#   http://localhost:8025   Mailpit
 ```
+
+```python
+# 챗봇 바로 호출 (docker compose exec backend python manage.py shell)
+>>> from llm.rag import answer
+>>> r = answer("잠실 주차 얼마야?")
+>>> r["route"], r["answer"]
+```
+
+> develop을 받은 뒤 프론트에서 `Module not found`가 나면 `.next` 캐시 문제입니다 → `docker compose up -d --build --renew-anon-volumes frontend`
 
 ---
 
 ## 12. 화면 설계 · UX Flow
 
-<p align="center"><img src="./docs/images/diagram_ux_flow.png" width="90%"/></p>
+```mermaid
+flowchart TD
+    H["메인<br/>챗봇 입력 · 오늘 경기 · 순위 · 샘플 코스"] --> C["챗봇<br/>구장 선택 + 질문"]
+    C --> A1["텍스트 답변<br/>근거 등급 안내"]
+    C --> A2[코스 답변]
+    A2 --> M["지도 자동 표시<br/>방문 순서 · 이동 시간"]
+    M --> S{로그인?}
+    S -- 예 --> SV[코스 저장 · 공유]
+    S -- 아니오 --> L[로그인 / 회원가입] --> SV
+    SV --> R["코스 목록<br/>검색 · 좋아요"]
+    H --> SC[일정]
+    H --> ST[순위]
+    H --> ID[구장 정보 · 관람 가이드]
+    H --> CM["커뮤니티<br/>게시판 · 승부 예측"]
+```
 
 | 화면 | 설명 | 캡처 |
 | --- | --- | --- |
-| [TODO] 메인 | | |
-| [TODO] 챗봇 | | |
-| [TODO] 직관 코스 | | |
-| [TODO] 구장 정보 | | |
-| [TODO] 커뮤니티 | | |
+| 메인 (`/`) | 챗봇 질문, 당일 경기 · 선발 투수, 팀 순위, 샘플 코스 | [TODO] |
+| 챗봇 | 구장 선택 후 질문, 답변 스트리밍, 코스 답변 시 지도 자동 표시 | [TODO] |
+| 직관 코스 (`/routes`, `/routes/[id]`, `/routes/new`) | 코스 목록 · 상세(지도 · 방문 순서) · 직접 만들기(반경 2.5km 장소 탐색) | [TODO] |
+| 구장 정보 (`/stadiums`, `/guide`) | 9개 구장 위치 안내, 기초 규칙 · 관람 체크리스트 | [TODO] |
+| 커뮤니티 (`/community`) | 자유 · 구단별 게시판, 승부 예측 | [TODO] |
 
 ---
 
 ## 13. API 문서
 
-- OpenAPI: [`contracts/openapi.yaml`](./contracts/openapi.yaml)
+- OpenAPI: [`contracts/openapi.yaml`](./contracts/openapi.yaml) (DRF serializer → OpenAPI → 프론트 TypeScript 타입 자동 생성)
 - Postman: [`docs/postman/`](./docs/postman/)
 
-| Method | Endpoint | 설명 |
+| Method | Endpoint (Nginx 경유) | 설명 |
 | --- | --- | --- |
-| [TODO] | | |
+| GET · POST | `/api/chat/sessions/` | 채팅방 목록 · 생성 (JWT) |
+| POST | `/api/chat/sessions/{id}/messages/` | 회원 채팅 — RAG 답변 SSE 스트리밍 |
+| POST | `/api/chat/turns/{turn_id}/finalize/` | 답변 중단 · 확정 처리 |
+| POST | `/api/chat/guest/` | 게스트 채팅 (로그인 없이 RAG) |
+| GET · POST | `/api/courses/` | 코스 목록 · 저장 |
+| GET · PATCH · DELETE | `/api/courses/{id}/` | 코스 상세 · 수정 · 삭제 |
+| POST | `/api/courses/{id}/reaction/` | 좋아요 |
+| GET | `/api/places/search/`, `/api/travel/directions/` | 장소 검색 · 길찾기 |
+| GET | `/api/tourism/`, `/api/weather/` | 관광 정보 · 구장 날씨 |
+| GET | `/api/baseball/...`, `/api/tving/...` | 경기 · 순위 · 선수 데이터 |
+| POST | `/api/auth/signup/`, `/api/auth/signin`, `/api/auth/logout` | 회원가입 · 로그인 · 로그아웃 |
+| GET | `/api/auth/user` | 내 정보 (JWT) |
+| — | `/api/community/...` | 게시글 · 초안 · 이미지 · 승부 예측 |
 
 ---
 
 ## 14. 배포 (AWS · Docker · Nginx · CI/CD)
 
-<!-- develop push → CI(Django check, Next build) → CD(EC2 SSH 배포) 흐름 -->
+```mermaid
+flowchart LR
+    PR[PR → develop] --> CI["ci-test<br/>pip install · manage.py check<br/>npm ci · next build"]
+    PUSH[push → develop] --> CI --> CD["cd-deploy<br/>SSH → EC2<br/>compose up --build"]
+    CD --> EC2
+    subgraph EC2["EC2 · docker compose"]
+        NG[nginx :80] --> FE[frontend :3000]
+        NG --> BE[backend :8000]
+        BE --> PG[(PostgreSQL 18<br/>pgvector)]
+        BE --> MN[(MinIO)]
+    end
+```
 
-- [TODO]
+- **CI** — develop 대상 PR · push마다 Django `manage.py check` + Next.js `build`
+- **CD** — develop push 시 `appleboy/ssh-action`으로 EC2에 접속해 재빌드 (비밀값은 GitHub Secrets `EC2_HOST` · `EC2_USER` · `EC2_SSH_KEY`)
+- **컨테이너 시작 순서** — db · minio(healthcheck) → backend(`migrate` → 읽기 전용 계정 준비 → 서버) → frontend → nginx
+- **볼륨** — `postgres_data` · `minio_data`, `data/` · `docs/`는 인덱싱용으로 읽기 전용 마운트
 
 ---
 
 ## 15. 테스트 계획 및 결과
 
-> 🔴 필수 산출물 · 코드: [`rag_test/`](./rag_test/)
+> 🔴 필수 산출물 · 코드: [`rag_test/`](./rag_test/) · 상세: [`docs/deliverables/04_테스트계획_결과보고서.md`](./docs/deliverables/04_테스트계획_결과보고서.md) · 원본 결과: [`docs/test_results/`](./docs/test_results/)
 
 ### 15.1 테스트 계획
 
 | 구분 | 대상 | 방법 | 지표 |
 | --- | --- | --- | --- |
-| 검색 성능 | [TODO] | 골든셋 | Hit@1 · Hit@5 · MRR |
-| 생성 성능 | [TODO] | 골든셋 · 규칙 기반 채점 | 정답률 · 환각(지어냄) · 오거절 |
-| 단위 · 통합 테스트 | [TODO] | unittest · node --test | 통과 여부 |
-| 사용자 시나리오 | [TODO] | 수동 QA | 기대 결과 일치 |
+| 검색 성능 | pgvector 검색 + 필터 + 재정렬 | 골든셋 · 설정을 하나씩 추가(R0 → R4) | Hit@1 · Hit@3 · Hit@5 · MRR |
+| 생성 성능 | RAG 체인 답변 | 골든셋 · 규칙 기반 채점 · 숫자 원문 대조 | 정답률 · 환각(지어냄) · 오거절 |
+| 단위 · 통합 테스트 | 프롬프트 · 파서 · 도구 · SQL 검증기 · 대체 경로 · 인증 | unittest · Django test · node --test | 통과 여부 |
+| 사용자 시나리오 | 로컬 서버 · 채팅 화면 | 수동 QA | 기대 결과 일치 · 응답 시간 |
 
 ### 15.2 골든셋 구성
-- [TODO] 문항 수, 질문 그룹(일정 · 순위 · 가격 · 반입 · 거절 · 함정 · 모호 …)
+
+- **club 55문항** — 반입 8 · 거절 8 · 규칙 6 · 일정 5 · 복합 5 · 가격 4 · 함정 4 · 순위 3 · 예매 3 · 좌석 2 · 재입장 2 · 별칭 2 · 모호 2 · 한계 1
+- **venue 30문항** — club 위임 6 · 교통 5 · 구장 안 먹거리 5 · 모호 3 · 외부 먹거리 3 · 콘텐츠 3 · 긴 질문 3 · 편의시설 1 · 거절 1
+- 문항마다 `expect`(answer · refuse · clarify · correct), 정답 `doc_id`, 필수 표현 `must`, 근거 등급을 기록
+- 별칭("기아", "라팍") · 긴 구어체 질문 · **데이터에 없는 질문**(타율 1위, 오늘 선발, 응원가, 2027 개막일) · **틀린 전제**("삼성 3위 맞지?")를 일부러 포함
 
 ### 15.3 검색 성능 결과
 
+정답 문서가 있는 45문항 기준 (거절 · 되묻기 10문항 제외), `ef_search=200`, 2026-09-14
+
 | 설정 | Hit@1 | Hit@5 | MRR |
-| --- | --- | --- | --- |
-| [TODO] | | | |
+| --- | ---: | ---: | ---: |
+| R0 벡터 검색만 | 42.2% | 51.1% | 0.452 |
+| R1 + 구장 필터 | 40.0% | 55.6% | 0.456 |
+| R2 + 카테고리 필터 | 64.4% | 86.7% | 0.719 |
+| R3 + 키워드 재정렬 | 73.3% | 93.3% | 0.814 |
+| **R4 + 날짜 가산 (최종)** | **75.6%** | **95.6%** | **0.836** |
+
+➡️ 임베딩 모델을 바꾸지 않고 **메타데이터 필터와 키워드 재정렬만으로 Hit@5 51.1% → 95.6%**. 가장 큰 효과는 카테고리 필터(+31.1%p), 검색 시간은 모든 설정에서 5 ms 안팎입니다.
 
 ### 15.4 생성 성능 결과
 
+club 55문항, `rag_test` 체인, 2026-09-14
+
 | 모드 | 정답 | 오답 | 지어냄 | 오거절 |
-| --- | --- | --- | --- | --- |
-| [TODO] | | | | |
+| --- | ---: | ---: | ---: | ---: |
+| answer (41) | 38 | 1 | 0 | 2 |
+| refuse (8) | 7 | 0 | 1 | 0 |
+| clarify (2) | 2 | 0 | 0 | 0 |
+| correct · 함정 (4) | 4 | 0 | 0 | 0 |
+| **합계 (55)** | **51 (92.7%)** | **1** | **1** | **2** |
+
+| 실패 | 원인 | 대응 |
+| --- | --- | --- |
+| 사직 1루 내야상단석 가격 (오거절) | 구단 좌석명이 색상형 등급으로 나뉘어 LLM이 "없다"고 판단 | `get_ticket_prices(zone_keyword)`로 DB에서 구역명 직접 검색 |
+| 두산 다음 홈경기 (오답) | "다음"을 데이터 기준일로 계산 | 프롬프트에 오늘 날짜 주입 + `get_games(status="upcoming")` |
+| 포항 구장 주차 (지어냄) | 거절 답변에 확인되지 않은 제안을 덧붙임 | 포항 예외 문구를 고정 문장으로 |
+| 홈팀 + 소주 반입 복합 (오거절) | 공통 주류 규정을 소주에 적용하지 못함 | 반입 규정 문장에 주종 예시 보강 예정 |
 
 ### 15.5 테스트 시나리오 (Test Case)
 
 | No | 시나리오 | 입력 | 기대 결과 | 결과 |
 | --- | --- | --- | --- | --- |
-| TC-01 | [TODO] 경기 수 조회 | | | ✅ |
-| TC-02 | [TODO] 구장 주차 | | | ✅ |
-| TC-03 | [TODO] 코스 추천 · 지도 표시 | | | ✅ |
-| TC-04 | [TODO] 비공식 정보 경고 | | | ✅ |
-| TC-05 | [TODO] 자료 없는 질문 거절 | | | ✅ |
-| TC-06 | [TODO] 야구와 무관한 질문 | | | ✅ |
+| TC-01 | 경기 수 조회 | 오늘 이후 KIA 홈경기 몇 경기 남았어? | `get_games`로 남은 경기 수 + 목록 | ✅ 7경기 (CSV 직접 계산과 일치) |
+| TC-02 | 구장 주차 | 잠실 주차 얼마야? | 요금 · 면수를 문서 근거로 | ✅ 5분 200원(소형), 15분 미만 무료, 약 680면 · 3.0초 |
+| TC-03 | 코스 추천 · 지도 표시 | 친구랑 잠실 경기 전후 걸어서 코스 짜줘 | 식당 → 구장 → 카페 + 지도 자동 표시 | ✅ 도보 1.2km, 지도 · 저장 동작 · 6.6초 |
+| TC-04 | 비공식 정보 경고 | 사직야구장 나갔다가 다시 들어올 수 있어? | 답변 + 현장 확인 안내 | ✅ |
+| TC-05 | 자료 없는 질문 거절 | KBO 타율 1위 선수 누구야? | 없다고 밝히고 확인처 안내 | ✅ |
+| TC-06 | 야구와 무관한 질문 | 파이썬 숙제 좀 도와줘 | 범위 밖 안내 (LLM 0회) | ✅ dispatcher 규칙으로 차단 |
+| TC-07 | 순위 조회 | 지금 KBO 순위 알려줘 | 최신 기준일 1~10위 | ✅ 4.7초 |
+| TC-08 | 주변 장소 | 잠실 근처 숙소 추천 | 카카오 기준 가까운 순 | ✅ 도보 8~9분 숙소 · 4.3초 |
+| TC-09 | 모호한 질문 | 재입장 되나요? | 어느 구장인지 되묻기 | ✅ |
+| TC-10 | 틀린 전제 | 삼성 라이온즈 3위 맞지? | 실제 순위로 바로잡기 | ✅ "2위예요" |
+| TC-11 | 별칭 | 기아 몇 위야? | 기아 → KIA 인식 | ✅ |
+| TC-12 | 취소 · 환불 | 예매한 티켓 환불하려면 어떻게 해? | 예매처 문의 고정 안내 | ✅ |
+
+> TC-01 ~ 03 · 07 · 08은 2026-09-15 로컬 서버(에이전트 파이프라인)에서, TC-04 · 05 · 09 ~ 12는 2026-09-14 골든셋 평가에서 확인한 결과입니다. TC-06은 dispatcher 규칙(무관 주제 단어 + 야구 단어 없음)을 코드로 확인한 결과입니다.
+
+**단위 테스트**
+
+```bash
+cd backend
+python -m unittest llm.rag.assistant.test_assistant   # 18건: 프롬프트 · 파서 · 도구 · SQL 검증 · 실패 대체
+python -m unittest llm.rag.nearby.test_nearby         # 8건
+python -m unittest llm.rag.course.test_transport      # 12건
+python manage.py test baseball.tests.test_query_service
+```
 
 ---
 
@@ -469,41 +774,81 @@ docker compose exec backend python manage.py build_index
 
 | 기능 | 시연 |
 | --- | --- |
-| [TODO] | <img src="./docs/images/demo/demo1.gif" width="400"/> |
+| [TODO] 챗봇 Q&A (주차 · 반입) | <img src="./docs/images/demo/demo1.gif" width="400"/> |
+| [TODO] 코스 추천 → 지도 자동 표시 | <img src="./docs/images/demo/demo2.gif" width="400"/> |
+| [TODO] 커뮤니티 · 코스 공유 | <img src="./docs/images/demo/demo3.gif" width="400"/> |
 
 ---
 
 ## 17. 트러블 슈팅
 
-<!-- 문제 → 원인 → 해결 → 결과 형식으로 3~5개 -->
-
 <details>
-<summary><b>① [TODO] 문제 제목</b></summary>
+<summary><b>① 출처 ID를 문서 ID로 썼더니 문서가 덮어써짐</b></summary>
 
-- **문제**:
-- **원인**:
-- **해결**:
-- **결과**:
+- **문제**: `doc_id = source_id`로 적재하려 했는데 파일 간 충돌이 20건 나옴 (`S037`이 좌석구역 · 좌석도 · 가격 세 파일에 동시에 존재)
+- **원인**: `source_id`는 "어느 공식 페이지에서 왔는지"를 뜻하는 **출처 ID**였고, 행을 구분하는 값이 아니었음
+- **해결**: `doc_id = {CATEGORY}_{SCOPE}_{자연키}`로 바꾸고, 자연키가 겹치는 17행은 `_2`, `_3` 접미사 부여. 해시 대신 읽을 수 있는 ID라 골든셋 작성 · 로그 확인이 쉬워짐
+- **결과**: `build_index`의 doc_id 중복 검사 0건
 
 </details>
 
 <details>
-<summary><b>② [TODO] 문제 제목</b></summary>
+<summary><b>② "캐리어: N"을 임베딩이 이해하지 못함</b></summary>
 
-- **문제**:
-- **원인**:
-- **해결**:
-- **결과**:
+- **문제**: "잠실에 캐리어 가져가도 돼?"에 반입 규정 문서가 검색되지 않음
+- **원인**: 반입 규정 JSON이 `{"carrier": "N"}` 같은 코드값이라 임베딩이 "캐리어는 안 된다"는 뜻을 담지 못함
+- **해결**: `rules_to_sentences()`로 "캐리어는 반입할 수 없습니다." 같은 문장으로 바꾼 뒤 임베딩. `UNKNOWN`은 허용 · 금지로 추측하지 않고 문장에서 뺌
+- **결과**: 반입 그룹 8문항 검색 Hit@5 37.5% → 100%, 생성 8문항 전부 정답
 
 </details>
 
 <details>
-<summary><b>③ [TODO] 문제 제목</b></summary>
+<summary><b>③ 날짜 · 순위는 벡터 검색으로 풀리지 않음</b></summary>
 
-- **문제**:
-- **원인**:
-- **해결**:
-- **결과**:
+- **문제**: "9월 2일 대구 경기 결과"를 물으면 다른 날짜의 대구 경기가 더 비슷하다고 나옴
+- **원인**: 임베딩은 "9/2"와 "9/12" 같은 숫자 차이를 잘 구분하지 못함
+- **해결**: 일정 · 순위 · 가격은 DB를 직접 조회하는 도구로 분리하고, 검색에서는 날짜가 정확히 같은 청크에 가산점(R4) 부여
+- **결과**: 일정 그룹 Hit@5 60% → 100%, 일정 5문항 · 순위 3문항 모두 정답
+
+</details>
+
+<details>
+<summary><b>④ 필터를 걸었더니 정답 문서가 후보에서 사라짐 (HNSW ef_search)</b></summary>
+
+- **문제**: 구장 · 카테고리 필터를 추가하자 정답 문서가 아예 검색 후보에 들어오지 않는 질문이 생김
+- **원인**: HNSW는 후보를 `ef_search`개(기본 40)만 뽑은 뒤 필터를 적용해서, 조건에 맞는 문서가 후보 단계에서 빠짐
+- **해결**: 트랜잭션 안에서 `SET LOCAL hnsw.ef_search = 200`
+- **결과**: 후보 유실 0건, 검색 시간은 중앙값 9 ms 그대로
+
+</details>
+
+<details>
+<summary><b>⑤ WHERE 조건이 두 개 이상인 SQL이 전부 거부됨</b></summary>
+
+- **문제**: 에이전트가 만든 `... WHERE team = %s AND date >= %s`가 "허용되지 않은 함수입니다: AND"로 실패
+- **원인**: sqlglot 28이 `AND · OR · XOR`를 함수 노드로 취급해 함수 허용 목록 검사에 걸림. `CASE WHEN`도 같은 이유로 거부
+- **해결**: 논리 연결자는 검사에서 빼고, `CASE`는 허용, `IF`는 `CASE` 안에서만 허용. 회귀 테스트 추가
+- **결과**: 기존 거부 테스트 22건(`pg_sleep` 등)은 그대로 거부, 정상 조회는 통과
+
+</details>
+
+<details>
+<summary><b>⑥ RAG를 붙이자 백엔드 회귀 테스트가 전부 깨짐</b></summary>
+
+- **문제**: 채팅 서비스 테스트는 가짜 모델로 교체해서 도는데, RAG 체인이 그 자리를 차지해 테스트 실패
+- **원인**: `chat_chain()`이 테스트 중에도 RAG 체인을 돌려줌
+- **해결**: `manage.py test` · pytest · `test_*` DB를 감지해 테스트 중에만 RAG를 끔. 다른 팀원의 테스트 파일은 수정하지 않음
+- **결과**: 기존 회귀 테스트 통과, 운영에서는 스위치 없이 항상 RAG 사용
+
+</details>
+
+<details>
+<summary><b>⑦ 대구 구장 안 먹거리가 1곳만 나옴</b></summary>
+
+- **문제**: "라팍 안에서 뭐 먹지?"에 팬펍 1곳만 답함
+- **원인**: 중복을 피하려고 카카오의 "구장 안" 매장을 일괄 제외했는데, 대구는 공식 매점 자료가 1건뿐
+- **해결**: 구장 안 먹거리는 구장별 층 · 구역까지 있는 자리어때 데이터(385곳)로 통일하고 비공식 등급으로 안내
+- **결과**: 대구도 43곳을 층 · 구역과 함께 안내
 
 </details>
 
@@ -514,22 +859,42 @@ docker compose exec backend python manage.py build_index
 ### 18.1 모델 · 서비스 고도화
 - **장소 인기 신호 추가**: 지금은 평점·리뷰 데이터가 없어 거리·동선·조건으로만 고릅니다. 우리 사이트 코스에 많이 담긴 장소 가중치, 공공 관광 데이터, 사용자 별점을 붙여 "실제로 많이 가는 곳"을 반영할 계획입니다.
 - **주점·야간 장소 수집 보강**: 카카오 API의 카테고리당 45건 제한 때문에 주점이 9개 구장 합계 11곳뿐입니다. 키워드 검색으로 따로 수집합니다.
-- [TODO]
+- **진짜 증분 인덱싱**: `doc_id + content_hash`로 바뀐 행만 다시 임베딩하고 upsert (지금은 임베딩만 재사용하고 테이블은 전체 교체)
+- **토큰 스트리밍**: 지금은 완성된 답을 24자씩 잘라 흘림 → LLM 토큰을 바로 흘려 첫 글자까지의 시간 단축
+- **경기 결과 · 순위 자동 갱신**: 수집 스크립트 → DB upsert 스케줄러
+- **평가 자동화**: 에이전트 파이프라인으로 골든셋 전체 재평가, PR마다 골든셋 회귀 실행
 
 ### 18.2 실제 서비스 적용 시 추가 기능
-- [TODO]
+- 🎫 **예매 오픈 알림** — 응원 팀 예매 오픈 시각에 푸시
+- 📓 **직관 기록 · 승률 트래커** — "내가 간 경기"를 기록하고 저장한 코스와 연결
+- 🌧️ **우천 · 날씨 기반 코스 변경** — 기상청 데이터로 실내 코스 제안
+- 🧑‍🤝‍🧑 **원정 팬 가이드** — 원정석 위치 · 동선 · 원정 팬이 많이 찾는 식당
+- 📱 **모바일 앱** — 구장 안에서 쓰기 좋은 형태
 
 ### 18.3 적용 가능한 곳 · 비즈니스 모델
-- [TODO]
+- **구단 공식 앱 · 홈페이지** — 반입 · 주차 · 재입장 같은 반복 문의 자동 응대
+- **티켓 예매처** — 예매 직후 "경기 날 준비" 안내와 코스 추천
+- **지자체 · 관광공사** — 원정 팬을 구장 주변 상권 · 관광지로 연결 (체류형 관광)
+- **제휴 모델** — 구장 주변 식당 · 숙소 제휴 노출, 코스 연계 할인 쿠폰
 
 ---
 
 ## 19. 협업 방식
 
-- **Git 전략**: [TODO] Fork → `feat/*` 브랜치 → `develop` PR → 팀장 리뷰 후 Squash merge
+- **Git 전략**: Fork → `feat/*` 브랜치 → 팀 저장소 `develop` PR → 팀장 리뷰 · Approve 후 Squash merge (작성자 임의 병합 금지, 공용 `main`/`develop` 직접 Push 금지)
 - **커밋 규칙**: `type: 한글 작업 내용` (`feat` · `fix` · `refactor` · `docs` · `test` · `chore`)
-- **도구**: [TODO] GitHub · Notion · Discord
-- **협업 중 문제와 해결**: [TODO]
+- **코드 소유**: `llm/rag/club` · `course`는 이형준, `venue`는 이현준 — 상대 폴더는 PR 리뷰로만 수정. 말투(`persona.py`)는 바꾸기 전에 팀 채널에 공유
+- **계약 관리**: DRF serializer → OpenAPI(`contracts/openapi.yaml`) → 프론트 TypeScript 타입 자동 생성, `contracts:check`로 검사
+- **도구**: GitHub · Notion · Postman · [TODO] 메신저
+- **협업 중 문제와 해결**:
+
+| 문제 | 해결 |
+| --- | --- |
+| 개인 브랜치마다 파이프라인 구조가 달라 병합 방향이 헷갈림 | 09/16 **팀 develop 최신본을 최종본으로 통일**, 개인 브랜치 별도 반영 안 함 |
+| 두 명이 같은 RAG 파일을 동시에 수정 | 도메인 폴더 분리 + `answer()` 입출력 약속만 공유 |
+| 프론트 · 백엔드 응답 형식 불일치 | OpenAPI 계약 자동 생성 · 검사 |
+| 평가 결과 CSV가 git에 안 올라감 (`rag_test/results/` 제외) | 최종 결과만 `docs/test_results/`로 복사 |
+| develop pull 후 환경변수 · 프론트 캐시 문제 | 루트 `.env` 필수 값 정리, `--renew-anon-volumes`로 재빌드 |
 
 ---
 
