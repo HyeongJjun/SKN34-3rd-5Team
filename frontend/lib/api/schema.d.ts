@@ -2093,6 +2093,7 @@ export interface components {
             readonly author: string;
             title: string;
             content: string;
+            contentDoc?: unknown;
             category: components["schemas"]["CommunityCategoryEnum"];
             /** Format: date-time */
             readonly createdAt: string | null;
@@ -2116,6 +2117,7 @@ export interface components {
             category: components["schemas"]["CommunityCategoryEnum"];
             title: string;
             content: string;
+            contentDoc?: unknown;
         };
         CommunityReportResult: {
             id: number;
@@ -2167,6 +2169,7 @@ export interface components {
             stadium: string;
             description: string;
             content: string;
+            contentDoc?: unknown;
             contentFormat?: components["schemas"]["ContentFormatEnum"];
             duration: string;
             cover: string;
@@ -2189,6 +2192,7 @@ export interface components {
             title: string;
             stadium: string;
             content?: string;
+            contentDoc?: unknown;
             contentFormat?: components["schemas"]["ContentFormatEnum"] | components["schemas"]["BlankEnum"];
             duration: string;
             tags: string[];
@@ -2207,6 +2211,7 @@ export interface components {
             stadium: string;
             description: string;
             content: string;
+            contentDoc?: unknown;
             contentFormat?: components["schemas"]["ContentFormatEnum"];
             duration: string;
             cover: string;
@@ -3143,11 +3148,13 @@ export interface components {
             category?: components["schemas"]["CommunityCategoryEnum"];
             title?: string;
             content?: string;
+            contentDoc?: unknown;
         };
         PatchedCoursePatchRequest: {
             title?: string;
             stadium?: string;
             content?: string;
+            contentDoc?: unknown;
             contentFormat?: components["schemas"]["ContentFormatEnum"] | components["schemas"]["BlankEnum"];
             duration?: string;
             tags?: string[];

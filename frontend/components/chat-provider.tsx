@@ -8,7 +8,6 @@ import {
   ChatClientError,
   fetchChatHistory,
   fetchChatTurns,
-  GUEST_STATUS,
   getChatStatus,
   listChatSessions,
   sendChatMessage,
@@ -76,6 +75,28 @@ export function useChat() {
   const value = useContext(ChatControlsContext);
   if (!value) throw new Error("useChat must be used inside ChatProvider");
   return value;
+}
+
+/**
+ * 가이드 샘플 화면용 챗봇: 실제 대화·요청 없이 빈 대화 화면만 보여 준다 (연결 상태 표시는 실제 값을 따른다).
+ */
+export function ChatSampleProvider({ children }: { children: React.ReactNode }) {
+  const real = useChat();
+  const noop = () => {};
+  const value: ChatControls = {
+    ...real,
+    messages: [], draft: "", context: undefined,
+    failed: "", error: "", notice: "", uncertain: false,
+    pending: "", streaming: "", progress: [],
+    conversations: [{ id: "guide-sample", title: "새 대화" }], activeConversationId: "guide-sample",
+    openChat: noop, onExpand: noop, onMinimize: noop, onClosePopup: noop,
+    onDraftChange: noop, onRefreshStatus: noop, onSend: noop, onRetry: noop, onCancel: noop, onReset: noop,
+    onSuggestion: noop, onSelectConversation: noop, onContextChange: noop,
+    // 샘플 화면은 실제 챗봇 코스를 받지 않는다
+    courseTarget: null, registerCourseTarget: noop, openCourseInWriter: noop, takePendingCourse: () => null,
+    appliedCourses: new Map(), applyChatCourse: noop, undoChatCourse: noop,
+  };
+  return <ChatControlsContext.Provider value={value}>{children}</ChatControlsContext.Provider>;
 }
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
@@ -170,7 +191,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const refreshStatus = useCallback(() => {
     statusRequestRef.current?.abort();
     if (memberStatus === "anonymous") {
-      setStatus(GUEST_STATUS);
+      // 비로그인 상태에서는 챗봇을 둘러보기만 할 수 있다 (질문은 로그인 후)
+      setStatus(null);
       setStatusLoading(false);
       setStatusError("");
       return;
@@ -342,7 +364,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setMessages([]);
     setDraft("");
     setContext(undefined);
-    setStatus(memberStatus === "anonymous" ? GUEST_STATUS : null);
+    setStatus(null);
     setStatusLoading(memberStatus === "authenticated" || memberStatus === "loading");
     setStatusError(memberStatus === "unavailable" ? "로그인 상태를 확인하지 못했어요." : "");
     setPending("");
@@ -417,8 +439,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const controller = new AbortController();
     const identityController = new AbortController();
     const version = ++requestVersion.current;
-    const mode: "member" | "guest" | null = memberStatus === "authenticated" ? "member" : memberStatus === "anonymous" ? "guest" : null;
-    if (!mode) { setError("로그인 상태를 확인한 뒤 다시 시도해 주세요."); return; }
+    if (memberStatus !== "authenticated") { setError(memberStatus === "anonymous" ? "챗봇 질문은 로그인 후 이용할 수 있어요." : "로그인 상태를 확인한 뒤 다시 시도해 주세요."); return; }
+    const mode = "member" as "member" | "guest";
     invalidateHistory();
     const active = { controller, identityController, version, mode, checkpoint: null as ChatCheckpoint | null, stop: null as ChatCheckpoint | null, wantsStop: false };
     requestRef.current = active;
@@ -564,7 +586,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     historyRequestRef.current?.abort();
   }, []);
 
-  const visibleStatus = memberStatus === "anonymous" ? GUEST_STATUS : memberStatus === "authenticated" ? status : null;
+  const visibleStatus = memberStatus === "authenticated" ? status : null;
   const visibleStatusLoading = memberStatus === "loading" || (memberStatus === "authenticated" && statusLoading);
   const visibleStatusError = memberStatus === "unavailable" ? "로그인 상태를 확인하지 못했어요." : memberStatus === "authenticated" ? statusError : "";
 

@@ -4536,7 +4536,7 @@ paths:
               $ref: '#/components/schemas/GuestChat'
         required: true
       security:
-      - {}
+      - jwtAuth: []
       responses:
         '200':
           content:
@@ -8095,6 +8095,8 @@ components:
         content:
           type: string
           maxLength: 20000
+        contentDoc:
+          nullable: true
         category:
           $ref: '#/components/schemas/CommunityCategoryEnum'
         createdAt:
@@ -8183,6 +8185,8 @@ components:
         content:
           type: string
           maxLength: 20000
+        contentDoc:
+          nullable: true
       required:
       - board
       - category
@@ -8288,6 +8292,8 @@ components:
           type: string
         content:
           type: string
+        contentDoc:
+          nullable: true
         contentFormat:
           $ref: '#/components/schemas/ContentFormatEnum'
         duration:
@@ -8353,6 +8359,8 @@ components:
         content:
           type: string
           maxLength: 12000
+        contentDoc:
+          nullable: true
         contentFormat:
           oneOf:
           - $ref: '#/components/schemas/ContentFormatEnum'
@@ -8405,6 +8413,8 @@ components:
           type: string
         content:
           type: string
+        contentDoc:
+          nullable: true
         contentFormat:
           $ref: '#/components/schemas/ContentFormatEnum'
         duration:
@@ -10458,6 +10468,8 @@ components:
         content:
           type: string
           maxLength: 20000
+        contentDoc:
+          nullable: true
     PatchedCoursePatchRequest:
       type: object
       properties:
@@ -10470,6 +10482,8 @@ components:
         content:
           type: string
           maxLength: 12000
+        contentDoc:
+          nullable: true
         contentFormat:
           oneOf:
           - $ref: '#/components/schemas/ContentFormatEnum'
