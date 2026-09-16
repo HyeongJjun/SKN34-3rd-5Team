@@ -230,7 +230,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ### 4.4 코스 장소 선정 기준
 
-> 상세: [`docs/코스장소_선정기준_핫플정의_20260916.md`](./docs/코스장소_선정기준_핫플정의_20260916.md)
+> 상세: [`docs/references/코스장소_선정기준_핫플정의_20260916.md`](docs/references/코스장소_선정기준_핫플정의_20260916.md)
 
 코스는 **경기 전 식사 → 구장 → 경기 후 갈 곳** 순서입니다. 인기 데이터(평점·리뷰)가 없기 때문에 "핫플레이스"라고 부르지 않고, 아래 규칙으로만 장소를 고릅니다.
 
@@ -334,16 +334,17 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ### 6.2 에이전트 도구
 
-| 도구 | 읽는 곳 | 용도 |
-| --- | --- | --- |
-| `get_games` | 야구 DB (고정 SQL) | 팀 · 구장 · 기간 · 상태별 경기 목록과 **전체 개수** |
-| `get_standings` | 야구 DB | 지정일 이전 가장 최근 순위 |
-| `get_ticket_prices` | 야구 DB | 구단 좌석 가격, 구역 키워드, 싼 순 |
-| `get_ticket_policy` | 야구 DB | 예매 오픈 · 매수 제한 · 예매처 |
-| `get_baseball_schema` → `execute_baseball_select` | 야구 DB 19개 테이블 | 위 4개로 안 되는 조회만. 스키마를 먼저 봐야 실행, 최대 50행 |
-| `search_kbo_documents` | pgvector | 다른 구장 · 주제 추가 검색 (근거 등급 포함) |
-| `search_nearby_places` | Kakao Local (백엔드) | 숙박 · 산책 · 실내 놀거리 · 편의점 |
-| `plan_course` | course 도메인 | 경기 전후 코스 → 지도 · 카드 |
+> 전체 도구의 입력·제약·안전장치는 [LLM 에이전트 도구 명세](./docs/api/agent-tools.md)를 참고합니다. 도구는 내부 LangChain 인터페이스이며 HTTP API가 아닙니다.
+
+| 앱 | 주요 도구 | 역할 | 상세 문서 |
+| --- | --- | --- | --- |
+| `baseball` | `get_games`, `get_standings`, `get_stadium`, 좌석·티켓·구장시설 조회, 제한된 SQL | 경기·순위와 구장 정보를 조회하고, 전용 도구로 부족한 질문은 읽기 전용 `SELECT`로 보완 | [야구·구장 도구](./docs/api/agent-tools.md#야구구장-도구) · [SQL 도구](./docs/api/agent-tools.md#제한된-범용-sql-도구) |
+| `travel` | `search_places`, `search_courses`, `get_course`, `get_directions`, `search_tourism`, `get_weather` | 주변 장소·저장 코스·이동 경로·관광지·경기 시각 날씨 조회 | [장소·코스·여행 도구](./docs/api/agent-tools.md#장소코스여행-도구) |
+| `community` | `search_community_posts`, `get_prediction_games` | 공개 게시글과 승부예측 대상 경기·익명 팬 투표 집계 조회 | [커뮤니티 도구](./docs/api/agent-tools.md#커뮤니티선수-도구) |
+| `tving` | `search_players` | 구단·선수 코드·이름으로 선수 정보를 찾고 필요하면 저장 자료를 갱신 | [선수 도구](./docs/api/agent-tools.md#커뮤니티선수-도구) |
+| `llm` | `search_kbo_documents`, `search_documents_tool`, `search_nearby_places`, `plan_course` | RAG 근거를 추가 검색하고 주변 장소 조회와 직관 코스 초안을 조정 | [문서 검색 도구](./docs/api/agent-tools.md#문서-검색-도구) · [코스 도구](./docs/api/agent-tools.md#장소코스여행-도구) |
+
+`accounts`는 에이전트에 회원 관리 도구를 제공하지 않습니다. 코스 생성 도구도 초안만 반환하며 실제 저장은 사용자가 코스 API에서 수행합니다.
 
 ### 6.3 프롬프트 설계
 
@@ -527,7 +528,7 @@ docker compose exec backend python manage.py check_index
 | 화면 | 설명 | 캡처 |
 | --- | --- | --- |
 | 메인 (`/`) | 챗봇 질문, 당일 경기 · 선발 투수, 팀 순위, 샘플 코스 | [TODO] |
-| 챗봇 | 구장 선택 후 질문, 답변 스트리밍, 코스 답변 시 지도 자동 표시 | [TODO] |
+| 챗봇 (`/chat`) | 구장 선택 후 질문, 답변 스트리밍, 코스 답변 시 지도 자동 표시 | [TODO] |
 | 직관 코스 (`/routes`, `/routes/[id]`, `/routes/new`) | 코스 목록 · 상세(지도 · 방문 순서) · 직접 만들기(반경 2.5km 장소 탐색) | [TODO] |
 | 구장 정보 (`/stadiums`, `/guide`) | 9개 구장 위치 안내, 기초 규칙 · 관람 체크리스트 | [TODO] |
 | 커뮤니티 (`/community`) | 자유 · 구단별 게시판, 승부 예측 | [TODO] |
@@ -536,26 +537,14 @@ docker compose exec backend python manage.py check_index
 
 ## 13. API 문서
 
-- OpenAPI: [`contracts/openapi.yaml`](./contracts/openapi.yaml) (DRF serializer → OpenAPI → 프론트 TypeScript 타입 자동 생성)
-- Postman: [`docs/postman/`](./docs/postman/)
-
-| Method | Endpoint (Nginx 경유) | 설명 |
+| 앱 | 역할 | API 명세서 |
 | --- | --- | --- |
-| GET · POST | `/api/chat/sessions/` | 채팅방 목록 · 생성 (JWT) |
-| POST | `/api/chat/sessions/{id}/messages/` | 회원 채팅 — RAG 답변 SSE 스트리밍 |
-| POST | `/api/chat/turns/{turn_id}/finalize/` | 답변 중단 · 확정 처리 |
-| POST | `/api/chat/guest/` | 게스트 채팅 (로그인 없이 RAG) |
-| GET · POST | `/api/courses/` | 코스 목록 · 저장 |
-| GET · PATCH · DELETE | `/api/courses/{id}/` | 코스 상세 · 수정 · 삭제 |
-| POST | `/api/courses/{id}/reaction/` | 좋아요 |
-| GET | `/api/places/search/`, `/api/travel/directions/` | 장소 검색 · 길찾기 |
-| GET | `/api/tourism/`, `/api/weather/` | 관광 정보 · 구장 날씨 |
-| GET | `/api/baseball/...`, `/api/tving/...` | 경기 · 순위 · 선수 데이터 |
-| POST | `/api/auth/signup/`, `/api/auth/signin`, `/api/auth/logout` | 회원가입 · 로그인 · 로그아웃 |
-| GET | `/api/auth/user` | 내 정보 (JWT) |
-| — | `/api/community/...` | 게시글 · 초안 · 이미지 · 승부 예측 |
-
----
+| `accounts` | 회원가입·로그인, JWT 인증과 회원 관리 | [회원·인증 API](./docs/api/accounts.md) |
+| `llm` | 회원·게스트 채팅, RAG 답변과 대화 기록 관리 | [채팅·RAG API](./docs/api/llm.md) |
+| `baseball` | 구단·구장·경기·순위·티켓 등 야구 데이터 관리 | [야구 데이터 API](./docs/api/baseball.md) |
+| `travel` | 직관 코스·장소·길찾기·날씨·관광 정보 제공 | [코스·장소 API](./docs/api/travel.md) |
+| `community` | 게시글·댓글·이미지·승부 예측 기능 제공 | [커뮤니티 API](./docs/api/community.md) |
+| `tving` | TVING 경기·구단·선수 데이터 수집과 조회 | [TVING 데이터 API](./docs/api/tving.md) |
 
 ## 14. 배포 (AWS · Docker · Nginx · CI/CD)
 
