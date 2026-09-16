@@ -5,6 +5,7 @@ import json
 from langchain_core.messages import ToolMessage
 
 from ..tools import create_domain_tools
+from ..progress import config_kwargs
 
 
 DOMAIN_TOOLS = {
@@ -24,6 +25,17 @@ DOMAIN_TOOLS = {
 }
 
 
+def visible_text(content):
+    """Responses API content에서 사용자에게 보여도 되는 텍스트 블록만 합친다."""
+    if isinstance(content, str):
+        return content
+    return "".join(
+        part.get("text", "") for part in content or []
+        if isinstance(part, dict) and part.get("type") in {"text", "output_text"}
+        and isinstance(part.get("text"), str)
+    )
+
+
 def tools_for(domain):
     allowed = DOMAIN_TOOLS[domain]
     return tuple(tool for tool in create_domain_tools() if tool.name in allowed)
@@ -33,7 +45,7 @@ def invoke(domain, name, arguments):
     if name not in DOMAIN_TOOLS[domain]:
         raise ValueError(f"{name} is not allowed for {domain}")
     tool = next(tool for tool in tools_for(domain) if tool.name == name)
-    return tool.invoke(arguments)
+    return tool.invoke(arguments, **config_kwargs())
 
 
 def run_model(model, messages, domain, max_tool_rounds=2, tool_names=None, require_first_tool=False):
@@ -49,15 +61,17 @@ def run_model(model, messages, domain, max_tool_rounds=2, tool_names=None, requi
     first = model.bind_tools(tools, tool_choice="required") if require_first_tool else bound
     conversation = list(messages)
     for round_number in range(max_tool_rounds):
-        response = (first if round_number == 0 else bound).invoke(conversation)
+        response = (first if round_number == 0 else bound).invoke(
+            conversation, **config_kwargs()
+        )
         conversation.append(response)
         if not response.tool_calls:
             return response
         for call in response.tool_calls:
             tool = allowed.get(call["name"])
-            result = tool.invoke(call["args"]) if tool else "허용되지 않은 도구입니다."
+            result = tool.invoke(call["args"], **config_kwargs()) if tool else "허용되지 않은 도구입니다."
             conversation.append(ToolMessage(
                 content=json.dumps(result, ensure_ascii=False, default=str),
                 tool_call_id=call["id"], name=call["name"],
             ))
-    return model.invoke(conversation)
+    return model.invoke(conversation, **config_kwargs())

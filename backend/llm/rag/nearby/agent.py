@@ -18,7 +18,9 @@ import time
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from ...progress import ProgressCancelled, ProgressStorageError, config_kwargs, operation
 from ..club.router import detect_stadium
+from ..domain_tools import visible_text
 from ..persona import FIXED
 from . import kakao
 from .prompts import NO_KEY, NO_PLACES, SYSTEM, USER
@@ -49,7 +51,7 @@ _llm = None
 def llm():
     global _llm
     if _llm is None:
-        _llm = ChatOpenAI(model=LLM_MODEL, temperature=0, timeout=25, max_retries=0, reasoning_effort="none")
+        _llm = ChatOpenAI(model=LLM_MODEL, temperature=0, timeout=25, max_retries=0, reasoning_effort="medium", use_responses_api=True)
     return _llm
 
 
@@ -118,7 +120,8 @@ def answer(question, history=None, hint_stadium=None):
         return {"answer": NO_KEY.format(stadium=stadium_ko, kind_label=kind_label), "sources": [],
                 "route": f"nearby:{kind}:no_key", "timing": timing}
     t0 = time.perf_counter()
-    places = narrow(kakao.nearby(code, kind), kind, question)[:SHOW]
+    with operation("tool", "search_nearby_places", arguments={"stadium_code": code, "kind": kind}):
+        places = narrow(kakao.nearby(code, kind), kind, question)[:SHOW]
     timing["kakao_ms"] = round((time.perf_counter() - t0) * 1000)
     if not places:
         return {"answer": NO_PLACES.format(stadium=stadium_ko, kind_label=kind_label), "sources": [],
@@ -129,11 +132,16 @@ def answer(question, history=None, hint_stadium=None):
     try:
         t0 = time.perf_counter()
         system = SYSTEM.replace("{kinds}", kind_label).replace("{kind_label}", kind_label)
-        out = llm().invoke([SystemMessage(content=system),
-                            HumanMessage(content=USER.format(stadium=stadium_ko, places=places_text(places), question=question))]).content
+        out = llm().invoke(
+            [SystemMessage(content=system),
+             HumanMessage(content=USER.format(stadium=stadium_ko, places=places_text(places), question=question))],
+            **config_kwargs(),
+        ).content
         timing["llm_ms"] = round((time.perf_counter() - t0) * 1000)
-        text = out if isinstance(out, str) else "".join(p.get("text", "") for p in out if isinstance(p, dict))
+        text = visible_text(out)
         text = text.strip() or template_answer(places, stadium_ko, kind_label)
+    except (ProgressCancelled, ProgressStorageError):
+        raise
     except Exception:
         log.exception("nearby llm failed")
         text = template_answer(places, stadium_ko, kind_label)

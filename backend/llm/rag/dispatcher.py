@@ -17,6 +17,7 @@ from .club import agent as club
 from .course import agent as course
 from .nearby import agent as nearby
 from .venue import agent as venue
+from ..progress import ProgressCancelled, ProgressStorageError, operation
 
 log = logging.getLogger(__name__)
 
@@ -101,7 +102,11 @@ def stadium_code_from_name(name: str | None) -> str | None:
 
 def _call(domain, question, history, hint_stadium):
     try:
-        return domain.answer(question, history=history, hint_stadium=hint_stadium)
+        name = domain.__name__.split(".")[-2]
+        with operation("phase", name):
+            return domain.answer(question, history=history, hint_stadium=hint_stadium)
+    except (ProgressCancelled, ProgressStorageError):
+        raise
     except Exception:            # 한 도메인이 죽어도 챗봇 전체가 죽지 않게
         log.exception("rag domain failed: %s", domain.__name__)
         if domain is nearby:     # 카카오 조회가 죽으면 venue(RAG)라도 답하게
@@ -117,6 +122,8 @@ def _call(domain, question, history, hint_stadium):
                 r = club.answer(question, history=history, hint_stadium=hint_stadium)
                 r["route"] = f"venue:error>club>{r['route']}"
                 return r
+            except (ProgressCancelled, ProgressStorageError):
+                raise
             except Exception:
                 log.exception("rag fallback failed")
         return {"answer": persona.FIXED["error"], "sources": [], "route": f"{domain.__name__}:error"}
@@ -138,7 +145,10 @@ def answer(question: str, history: list[dict] | None = None, stadium_name: str |
         return {"answer": persona.FIXED["scope"], "sources": [], "route": "dispatcher:scope", "places": []}
 
     try:
-        result = assistant.answer(question, history=history, hint_stadium=hint)
+        with operation("phase", "assistant"):
+            result = assistant.answer(question, history=history, hint_stadium=hint)
+    except (ProgressCancelled, ProgressStorageError):
+        raise
     except Exception:
         log.exception("assistant pipeline failed — falling back to domain")
         result = _domain_answer(kind, question, history, hint)
@@ -147,6 +157,43 @@ def answer(question: str, history: list[dict] | None = None, stadium_name: str |
     result["answer"] = persona.finalize(result["answer"])
     result.setdefault("places", [])
     result.setdefault("coursePayload", None)   # 코스를 짰을 때만 — 프론트 지도·"이 코스 저장하기" 용
+    return result
+
+
+def stream(question: str, history: list[dict] | None = None, stadium_name: str | None = None,
+           intent: str | None = None):
+    """assistant의 마지막 provider 응답만 흘리고 완료 메타데이터를 반환한다."""
+    history = history or []
+    hint = stadium_code_from_name(stadium_name)
+    kind = route(question, intent)
+    if kind == "scope":
+        result = {"answer": persona.FIXED["scope"], "sources": [], "route": "dispatcher:scope", "places": []}
+        yield result["answer"]
+        return result
+    emitted = False
+    try:
+        with operation("phase", "assistant"):
+            stream = assistant.stream_answer(question, history=history, hint_stadium=hint)
+            while True:
+                try:
+                    chunk = next(stream)
+                except StopIteration as done:
+                    result = done.value
+                    break
+                emitted = True
+                yield chunk
+    except (ProgressCancelled, ProgressStorageError):
+        raise
+    except Exception:
+        if emitted:
+            raise
+        log.exception("assistant stream failed — falling back to domain")
+        result = _domain_answer(kind, question, history, hint)
+        result["route"] = f"agent:error>{result['route']}"
+        result["answer"] = persona.finalize(result["answer"])
+        yield result["answer"]
+    result.setdefault("places", [])
+    result.setdefault("coursePayload", None)
     return result
 
 

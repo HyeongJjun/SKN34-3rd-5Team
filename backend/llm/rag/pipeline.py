@@ -75,8 +75,6 @@ _STADIUM_PREFIX = re.compile(r"^\s*\[선택한 구장:\s*([^\]]+)\]\s*")   # 프
 # dispatcher 에 course 가 들어오기 전/후 둘 다에서 돌게 한다
 _HAS_INTENT = "intent" in inspect.signature(dispatcher.answer).parameters
 
-STREAM_CHUNK = 24          # RAG 답은 한 번에 완성되므로 이만큼씩 끊어 흘린다 (화면 타이핑 효과)
-
 # 이번 요청의 RAG 결과를 뷰가 꺼내 쓰라고 잠깐 놔두는 자리.
 # 체인은 문자열만 돌려주는데(성호 규격), 뷰는 places·coursePayload 도 내려줘야 해서 필요하다.
 # ContextVar 라 요청(스레드)마다 따로 놀아서 동시 요청이 섞이지 않는다.
@@ -192,8 +190,7 @@ class RagChatChain(Runnable[dict, str]):
     ChatService.invoke_with_messages 는 .invoke() 를,
     ChatService.stream_with_history 는 .stream() 을 부른다 — 둘 다 여기로 온다.
 
-    RAG 는 답을 한 번에 만들기 때문에 .stream() 은 완성된 답을 잘라서 흘린다.
-    (화면에는 똑같이 한 글자씩 찍히고, 프론트 SSE 계약도 그대로다)
+    .stream() 은 마지막 provider 모델의 실제 text delta 만 흘린다.
     """
 
     name = "kbo_rag_chain"
@@ -201,14 +198,18 @@ class RagChatChain(Runnable[dict, str]):
     @staticmethod
     def _args(inputs: Any) -> dict:
         if isinstance(inputs, str):
-            return {"question": inputs, "history": None, "stadium_name": None, "intent": None}
+            question, stadium_name = split_stadium_prefix(inputs)
+            return {"question": question, "history": [], "stadium_name": stadium_name, "intent": None}
         inputs = inputs or {}
+        question, prefixed_stadium = split_stadium_prefix(inputs.get("question") or "")
         return {
-            "question": inputs.get("question") or "",
+            "question": question,
             # chat_history 는 성호 체인 키, history 는 우리 키 — 둘 다 받는다
-            "history": inputs.get("chat_history") if inputs.get("chat_history") is not None
-            else inputs.get("history"),
-            "stadium_name": inputs.get("stadium_name"),
+            "history": normalize_history(
+                inputs.get("chat_history") if inputs.get("chat_history") is not None
+                else inputs.get("history")
+            ),
+            "stadium_name": inputs.get("stadium_name") or prefixed_stadium,
             "intent": inputs.get("intent"),
         }
 
@@ -223,9 +224,8 @@ class RagChatChain(Runnable[dict, str]):
 
     def stream(self, input: Any, config: Optional[RunnableConfig] = None,
                **kwargs) -> Iterator[str]:
-        text = self.invoke(input, config, **kwargs)
-        for i in range(0, len(text), STREAM_CHUNK):
-            yield text[i:i + STREAM_CHUNK]
+        result = yield from dispatcher.stream(**self._args(input))
+        _LAST.set(result)
 
 
 rag_chain = RagChatChain()

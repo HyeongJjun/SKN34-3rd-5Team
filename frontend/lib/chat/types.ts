@@ -16,8 +16,38 @@ export type ChatCourse = {
   title?: string;
   content?: string;
 };
-// course 는 화면 표시용이다. parseChatRequest 가 서버로 보낼 때 role·content 만 남긴다.
-export type ChatMessage = { role: "user" | "assistant"; content: string; course?: ChatCourse };
+export type ChatProgressStatus = "started" | "completed" | "failed" | "interrupted" | "unknown";
+export type ChatProgressEvent = {
+  turnId: string;
+  sequenceNo: number;
+  operationId: string;
+  parentOperationId: string | null;
+  kind: "phase" | "retrieval" | "tool";
+  status: ChatProgressStatus;
+  label: string;
+  createdAt: string;
+  toolName: string | null;
+  toolCallId?: string | null;
+  arguments?: Record<string, unknown> | null;
+  result?: Record<string, unknown> | null;
+  truncated?: boolean;
+  summary: Record<string, unknown> | null;
+};
+export type ChatProgressOperation = Omit<ChatProgressEvent, "sequenceNo"> & {
+  startedAt?: string;
+  startSequenceNo?: number;
+  sequenceNo: number;
+};
+export type ChatTurnStatus = "pending" | "completed" | "stopped" | "failed";
+// course·progress 는 화면 표시용이다. parseChatRequest 가 서버로 보낼 때 role·content 만 남긴다.
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  id?: number;
+  course?: ChatCourse;
+  progress?: ChatProgressOperation[];
+  turnStatus?: ChatTurnStatus;
+};
 export type ChatContext = { stadium?: string; intent?: "route" | "baseball" | "stadium" };
 export type ChatRequest = { messages: ChatMessage[]; sessionId?: number; context?: ChatContext };
 export type ChatStatus = { provider: "demo" | "openai" | "backend" | "guest"; model: string; ready: boolean };

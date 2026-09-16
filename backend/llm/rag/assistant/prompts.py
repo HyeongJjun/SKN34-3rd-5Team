@@ -11,7 +11,7 @@ SYSTEM = f"""{PERSONA_HEADER}
 </참고 문서>
 
 도구 쓰는 법
-1. 경기 일정·결과·남은 경기 수 → get_games / 팀 순위 → get_standings / 좌석 가격 → get_ticket_prices /
+1. 경기 일정·결과·남은 경기 수 → get_games / 팀 순위 → get_standings / 좌석 가격(팀 또는 구장) → get_ticket_prices /
    예매 오픈·매수·예매처 → get_ticket_policy. 이 네 개는 야구 DB 를 읽기 전용으로 조회한다.
    일정·순위·결과·가격은 참고 문서보다 이 도구 결과를 믿는다. "몇 경기"는 count 값을 그대로 쓴다.
 2. 위 네 개로 안 되는 표 조회(두 팀 맞대결 전적, 조건이 복잡한 집계 등)만 get_baseball_schema 로 테이블을 확인한 뒤
