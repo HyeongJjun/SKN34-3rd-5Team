@@ -9,27 +9,33 @@
 
 ```text
 [오프라인 인덱싱]                                   [요청마다 서빙]
-build_index.py                                      llm/chat_service.py      ← ① 채팅 API가 RAG 체인을 부름
+build_index.py                                      llm/views.py             ← ⓪ SSE 뷰 (checkpoint · progress · delta · done)
+                                                    llm/chat_service.py      ← ① 채팅 API가 RAG 체인을 부름
   ├ build_chunks()  행 → 텍스트 · doc_id              llm/rag/pipeline.py      ← ② 백엔드 진입점 (Runnable)
   ├ embed()         OpenAI 임베딩 · 체크포인트          llm/rag/dispatcher.py    ← ③ 범위 판단 · 실패 시 대체
   └ load()          DocumentChunk 적재                llm/rag/assistant/
-        │                                               ├ pipeline.py          ← ④ retrieve | prompt | agent | parse
-        ▼                                               ├ tools.py             ← ⑤ DB 조회 · 문서 검색 · 코스 도구
+        │                                               ├ pipeline.py          ← ④ retrieve → prompt → 도구 계획 → 답변 스트리밍
+        ▼                                               ├ tools.py             ← ⑤ assistant 전용 도구 9개
 llm/models.py  DocumentChunk (vector 1536, HNSW)  ◀──  └ prompts.py
                                                     llm/rag/club/retrieval.py ← ⑥ pgvector 검색 + 키워드 재정렬
                                                     llm/rag/persona.py        ← ⑦ 말투 · 경고 문구
+                                                    llm/rag/domain_tools.py   ← ⑧ 모든 에이전트가 쓰는 도구 28개
+                                                    llm/progress.py           ← ⑨ 진행 이벤트 수집 · 저장
 ```
 
 | 파일 | 줄 수 | 역할 |
 | --- | ---: | --- |
-| `backend/llm/models.py` | 85 | 벡터 테이블 정의 |
+| `backend/llm/models.py` | 126 | 벡터 테이블 · 진행 기록(`ChatProgressEvent`) 정의 |
 | `backend/llm/management/commands/build_index.py` | 390 | 인덱싱 |
 | `backend/llm/rag/club/retrieval.py` | 114 | 임베딩 · 벡터 검색 · 재정렬 |
-| `backend/llm/rag/assistant/pipeline.py` | 152 | LangChain 파이프라인 |
-| `backend/llm/rag/assistant/tools.py` | 372 | 에이전트 도구 9개 |
-| `backend/llm/rag/dispatcher.py` | 176 | 범위 판단 · 대체 경로 |
+| `backend/llm/rag/assistant/pipeline.py` | 280 | LangChain 파이프라인 · 답변 스트리밍 |
+| `backend/llm/rag/assistant/tools.py` | 414 | assistant 전용 도구 9개 |
+| `backend/llm/rag/domain_tools.py` | 81 | 모든 에이전트 공용 도구 목록 (28개) |
+| `backend/llm/rag/dispatcher.py` | 229 | 범위 판단 · 대체 경로 · 스트림 |
 | `backend/llm/rag/pipeline.py` | 239 | 백엔드 진입점 |
-| `backend/llm/chat_service.py` | 185 | 채팅 서비스 연결 지점 |
+| `backend/llm/chat_service.py` | 227 | 채팅 서비스 연결 지점 |
+| `backend/llm/progress.py` | 467 | 진행 이벤트 수집 · 민감값 제거 · 저장 |
+| `backend/llm/views.py` | 544 | SSE 뷰 |
 
 ---
 
@@ -218,6 +224,9 @@ def keyword_rerank(question, rows, k=5, alpha=0.3, date_bonus=1.0):
 chain = RunnableLambda(retrieve) | RunnableLambda(build_prompt) | agent | RunnableLambda(parse_output)
 ```
 
+- `invoke` 경로(평가 · 테스트)는 위 체인을 그대로 씁니다.
+- 채팅 화면의 스트리밍 경로(`stream_answer`)는 같은 `retrieve` · `build_prompt`를 쓰고, **도구 계획**과 **최종 답변 스트리밍**을 나눠 실행합니다 (4-4).
+
 ### 4-1. retrieve — 질문으로 먼저 검색
 
 ```python
@@ -264,62 +273,99 @@ def build_prompt(inputs):
 5. SQL·테이블명·도구 이름 같은 내부 용어는 답변에 쓰지 않는다.
 ```
 
-### 4-3. agent — 필요할 때만 도구 호출
+### 4-3. 모델 — Responses API
 
 ```python
+def llm():
+    global _llm
+    if _llm is None:
+        _llm = ChatOpenAI(model=LLM_MODEL, temperature=0, timeout=25, max_retries=0,
+                          reasoning_effort="medium", use_responses_api=True)
+    return _llm          # 서버 기동 후 한 번만 만들고 재사용
+
 def build_chain(model=None, tool_list=None, retriever=None):
-    model = model or ChatOpenAI(model=LLM_MODEL, temperature=0, timeout=25,
-                                max_retries=0, reasoning_effort="none")
+    model = model or llm()
     agent = create_agent(model=model, tools=tool_list if tool_list is not None else tools.build_tools())
     return RunnableLambda(retriever or retrieve) | RunnableLambda(build_prompt) | agent | RunnableLambda(parse_output)
-
-def chain():                        # 서버 기동 후 한 번만 만들고 재사용
-    global _chain
-    if _chain is None:
-        _chain = build_chain()
-    return _chain
 ```
 
-### 4-4. parse_output · answer — 결과 정리
+### 4-4. stream_answer — 도구 계획은 숨기고 답변만 바로 흘림
 
 ```python
-def answer(question, history=None, hint_stadium=None, _chain_obj=None):
-    st = tools.new_state(hint_stadium, question=question, history=history)   # 요청별 상태 (ContextVar)
-    t0 = time.perf_counter()
-    text = (_chain_obj or chain()).invoke(
-        {"question": question, "history": history or [], "hint": hint_stadium},
-        config={"recursion_limit": RECURSION_LIMIT},                          # 도구 호출 4~5번까지
-    )
+def stream_answer(question, history=None, hint_stadium=None, **kw):
+    with tools.request_state(hint_stadium, question, history):      # 요청별 상태 (ContextVar), 끝나면 복원
+        return (yield from _stream_answer(question, history=history, hint_stadium=hint_stadium, **kw))
+
+def _stream_answer(question, history=None, hint_stadium=None, *, model=None, tool_list=None, retriever=None):
+    model = model or llm()
+    st = tools.state()
+    messages = build_prompt((retriever or retrieve)({...}))["messages"]
+    exposed = list(tool_list if tool_list is not None else tools.build_tools())   # 도구 28개
+    bound = model.bind_tools(exposed)
+    conversation, calls, seen = list(messages), 0, {}
+
+    for _ in range(MAX_TOOL_CALLS + 1):                              # ① 도구 계획 (화면에 안 보냄)
+        planner = [SystemMessage(f"{conversation[0].content}\n\n{PLANNER_RULE}"), *conversation[1:]]
+        response = bound.invoke(planner, **config_kwargs())         # config_kwargs → 진행 이벤트 콜백
+        if not response.tool_calls:
+            break
+        ...                                                          # 같은 호출은 캐시, 최대 4회
+        output = allowed[name].invoke(call, **config_kwargs())      # 도구 실행 → progress 시작/완료
+        conversation.append(ToolMessage(...))
+
+    for chunk in model.stream(conversation, **config_kwargs()):     # ② 최종 답변 토큰 스트리밍
+        text = _text(chunk.content)
+        if text:
+            yield text                                               # → SSE delta
     course = st.get("course") or {}
-    if course.get("places"):
-        text = course["answer"]              # 지도에 그린 코스와 글이 어긋나지 않게
-    if not text:
-        raise ValueError("agent returned no answer")   # → 디스패처가 기존 도메인으로 재시도
-    return {
-        "answer": text,
-        "sources": st["sources"],
-        "route": "agent:rag" + ("," + ",".join(dict.fromkeys(st["tools"])) if st["tools"] else ""),
-        "timing": {"agent_ms": round((time.perf_counter() - t0) * 1000), "tool_calls": len(st["tools"])},
-        # 코스를 짰으면 places · coursePayload · stadiumCode · travel 도 함께
-    }
+    return {"answer": "".join(answer), "sources": st["sources"],
+            "route": "agent:rag" + ...,                              # 부른 도구 이름
+            "timing": {"agent_ms": ..., "tool_calls": calls},
+            **{k: course[k] for k in ("places", "coursePayload", "stadiumCode", "travel") if course.get(k)}}
 ```
+
+- `PLANNER_RULE`: "조회 계획 단계에서는 답변을 쓰지 말고, 더 부를 도구가 없으면 READY만 출력"
+- 코스를 짠 경우 `places` · `coursePayload`가 `done` 이벤트에 실려 지도에 바로 그려집니다.
 
 ---
 
-## 5. 에이전트 도구 — `llm/rag/assistant/tools.py`
+## 5. 에이전트 도구 — `assistant/tools.py` · `domain_tools.py`
 
 ```python
-def build_tools():
+# llm/rag/assistant/tools.py — assistant 전용 9개
+def build_specialized_tools():
     def tool(fn, schema):
         return StructuredTool.from_function(fn, name=fn.__name__, args_schema=schema, description=fn.__doc__,
             handle_validation_error="도구 인자 형식이 올바르지 않습니다. 설명을 보고 다시 부르세요.")
-    return [
+    return (
         tool(get_games, GamesInput), tool(get_standings, StandingsInput),
         tool(get_ticket_prices, PricesInput), tool(get_ticket_policy, PolicyInput),
         tool(get_baseball_schema, NoInput), tool(execute_baseball_select, SelectInput),
         tool(search_kbo_documents, SearchInput), tool(search_nearby_places, NearbyInput), tool(plan_course, CourseInput),
-    ]
+    )
+
+def build_tools():
+    from ..domain_tools import tools_for
+    return list(tools_for("assistant"))          # 실제로 에이전트에 붙는 것은 공용 28개
 ```
+
+```python
+# llm/rag/domain_tools.py — 모든 답변 에이전트(assistant · club · venue · course · nearby · chat)가 공유
+def _all_tools():
+    registered = {tool.name: tool for tool in build_specialized_tools()}      # 전용 9개가 우선
+    for tool in (*create_default_tools(), search_documents_tool):            # 공용 조회 21개 + SQL 2개 + 문서 검색 1개
+        registered.setdefault(tool.name, tool)                               # 이름이 같으면 건너뜀
+    return tuple(registered.values())                                        # → 28개
+
+def tools_for(domain):
+    if domain not in SUPPORTED_DOMAINS:
+        raise KeyError(domain)
+    return _all_tools()
+```
+
+- 공용 조회 도구: 구장 · 좌석 · 좌석 시야 · 좌석 배치도 · 예매 정책 · 교통 · 먹거리 · 편의시설 · 구장 콘텐츠 · 장소 검색 · 길찾기 · 관광 · 날씨 · 코스 검색/상세 · 커뮤니티 글 · 승부 예측 · 선수 (+ 일정 · 순위 · 가격은 전용 구현과 이름이 같아 하나만 연결)
+- `plan_course`는 코스 생성 중에 다시 부르면 바로 거절해 재귀를 막습니다.
+- 테스트: `llm/test_rag_domain_bindings.py`가 에이전트마다 같은 28개가 붙는지 확인합니다.
 
 **DB 조회 도구는 읽기 전용 서비스를 거침**
 
@@ -362,11 +408,13 @@ def _run(self, values):
     ...                                        # (테스트 중에만) 기존 도구 루프
 
 def stream_with_history(self, messages, question):
-    from .rag.pipeline import chat_chain
-    if rag := chat_chain():
-        yield from rag.stream({"question": question, "chat_history": messages})
-        return
-    ...
+    from .rag.assistant.tools import request_state
+    from .rag.pipeline import chat_chain, normalize_history
+    with request_state(None, question, normalize_history(messages)):
+        if rag := chat_chain():
+            yield from rag.stream({"question": question, "chat_history": messages})
+            return
+        ...
 ```
 
 ### 6-2. 채팅 서비스 규격을 맞추는 Runnable
@@ -379,9 +427,8 @@ class RagChatChain(Runnable[dict, str]):
         return self.detail(input)["answer"]
 
     def stream(self, input, config=None, **kwargs):
-        text = self.invoke(input, config, **kwargs)
-        for i in range(0, len(text), STREAM_CHUNK):       # 24자씩 흘려 SSE 계약 유지
-            yield text[i:i + STREAM_CHUNK]
+        result = yield from dispatcher.stream(**self._args(input))   # 모델 토큰을 그대로 흘림
+        _LAST.set(result)                                            # 뷰가 done 이벤트에 places 등을 싣도록
 
 def chat_chain():
     return rag_chain if use_rag() else None               # 테스트 러너 안에서만 None
@@ -413,7 +460,69 @@ def answer(question, history=None, stadium_name=None, intent=None):
 
     result["answer"] = persona.finalize(result["answer"])  # 말투 통일 · 경고 문구
     return result
+
+def stream(question, history=None, stadium_name=None, intent=None):
+    kind = route(question, intent)
+    if kind == "scope":
+        yield persona.FIXED["scope"]; return {...}
+    emitted = False
+    try:
+        with operation("phase", "assistant"):              # progress: 질문 처리 중 → 완료
+            result = yield from assistant.stream_answer(question, history=history, hint_stadium=hint)
+            ...                                            # 조각을 하나라도 보냈으면 emitted = True
+    except Exception:
+        if emitted:
+            raise                                          # 이미 글자가 나갔으면 대체하지 않고 오류 이벤트
+        result = _domain_answer(kind, question, history, hint)
+        result["answer"] = persona.finalize(result["answer"])
+        yield result["answer"]
+    return result
 ```
+
+**범위 판단 규칙**
+
+```python
+OFF_TOPIC = re.compile(r"축구|K리그|농구|배구|골프|...|날씨|주식|코인|부동산|영화|드라마|...|코딩|파이썬|숙제|레시피|요리법")
+# 야구 단어가 섞여 있어도 절대 답하지 않는 주제 (2026-09-16 추가)
+HARD_OFF = re.compile(r"코딩|파이썬|프로그래밍|숙제|과제\s*좀|레시피|요리법|주식|코인|비트코인|부동산|로또|"
+                      r"(?:자동차|차량)\s*(?:추천|뭐\s*살|살까|구매|바꾸|바꿀)")
+
+def route(question, intent=None):
+    if HARD_OFF.search(question):
+        return "scope"                                     # "야구 좋아하는데 코딩 알려줘" → 차단
+    if OFF_TOPIC.search(question) and not BASEBALL.search(question):
+        return "scope"                                     # "축구 경기 결과 알려줘" → 차단
+    ...
+```
+
+### 6-4. SSE 뷰 · 진행 기록 — `views.py` · `progress.py`
+
+```python
+# llm/views.py (회원 채팅)
+def events():
+    yield sse("checkpoint", {"turn_id": ..., "receipt": ...})
+    collector = ProgressCollector(turn.pk, persistent=True, output=queue.Queue(maxsize=64))
+    for event, payload in threaded_stream(lambda: service.stream_with_history(history, turn.question), collector):
+        if event == "progress":
+            yield sse("progress", project_event(payload, include_details))   # 관리자만 입력 · 결과 포함
+        elif event == "done":
+            yield sse("done", {"turn_id": ..., "receipt": ..., **payload})    # places · coursePayload
+        else:
+            yield sse("delta", {"text": payload, ...})
+```
+
+| 이벤트 | 보내는 때 | 내용 |
+| --- | --- | --- |
+| `checkpoint` | 시작 (회원만) | 턴 번호 · 서명된 영수증 |
+| `progress` | 검색 · 도구 · 단계가 시작 / 완료 / 실패 / 중단될 때 | `kind`(phase · retrieval · tool) · `status` · `label`("경기 일정 조회 중") · `tool_name` |
+| `delta` | 답변 토큰이 올 때마다 | 답변 조각 |
+| `done` | 끝 | 코스면 `places` · `coursePayload` · `stadiumCode` · `travel` |
+| `error` | 실패 | 고정 오류 문구 |
+
+- **수집 방식**: LangChain 콜백(`on_tool_start` · `on_tool_end` 등)을 요청마다 `config_kwargs()`로만 넘겨, 전역 에이전트에 콜백을 붙이지 않습니다. 수집기는 ContextVar라 동시 요청이 섞이지 않습니다.
+- **민감값 제거**: 도구별 허용 키(`TOOL_SAFE_KEYS`)만 남기고 SQL · 스키마 · URL · 원문은 버립니다. 입력 4KB · 결과 16KB · 요청당 128건 제한.
+- **저장**: 회원 대화는 `ChatProgressEvent`(마이그레이션 0005)에 저장, `GET /api/chat/sessions/{id}/turns/`로 다시 불러옵니다. 게스트는 저장하지 않습니다.
+- **중단**: 브라우저 연결이 끊기면 다음 모델 · 도구 호출을 시작하지 않고 `interrupted`로 기록합니다.
 
 ---
 
@@ -447,7 +556,11 @@ docker compose exec backend python manage.py shell
 | `LLM_MODEL` | `gpt-5.6-luna` (기본) | `.env` |
 | `CONTEXT_K` | 6 | `assistant/pipeline.py` |
 | `HISTORY_TURNS` | 8 | `assistant/pipeline.py` |
-| `AGENT_RECURSION_LIMIT` | 12 (도구 호출 약 4~5회) | `.env` |
+| `AGENT_RECURSION_LIMIT` | 12 (invoke 경로, 도구 호출 약 4~5회) | `.env` |
+| `MAX_TOOL_CALLS` | 4 (스트리밍 경로 도구 호출 상한) | `assistant/pipeline.py` |
+| `MAX_ANSWER_LENGTH` | 8000자 | `assistant/pipeline.py` |
+| `reasoning_effort` | `medium` · Responses API | `assistant/pipeline.py` |
+| 진행 이벤트 한도 | 요청당 128건 · 입력 4KB · 결과 16KB | `progress.py` |
 | `EF_SEARCH` | 200 | `club/retrieval.py` |
 | HNSW `m` / `ef_construction` | 16 / 64 | `models.py` |
 | `EMBED_BATCH` / `CHECKPOINT_EVERY` | 100 / 500 | `build_index.py` |

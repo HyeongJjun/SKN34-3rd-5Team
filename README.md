@@ -184,6 +184,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | --- | --- |
 | 💬 구장 안내 Q&A (RAG) | 교통 · 주차 · 좌석 · 가격 · 반입 · 재입장 · 편의시설을 문서 검색으로 답변 |
 | 📊 경기 데이터 조회 | 일정 · 순위 · 티켓 가격을 **읽기 전용 DB 조회 도구**로 정확히 답변 |
+| ⏱️ 실시간 응답 · 진행 표시 | 답변을 글자 단위로 바로 보여 주고, 만드는 동안 "경기 일정 조회 중 → 완료"처럼 **어떤 조회를 하는지** 함께 표시 |
 | 🗺️ 직관 코스 추천 | 경기 전 맛집 → 구장 → 경기 후 코스를 만들고 **카카오맵에 자동 표시** |
 | 🏷️ 근거 등급 표시 | 공식 / 공식 확인 전 / 비공식 / 외부 서비스 정보에 따라 말투를 다르게 |
 | 👥 커뮤니티 · 코스 공유 | 자유 · 구단별 게시판, 승부 예측, 코스 저장 · 좋아요 · 공유 (JWT 회원) |
@@ -227,6 +228,8 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | 고정 SQL 우선 | 일정 · 순위 · 가격 · 예매정책은 **코드에 고정한 SELECT**를 쓰는 전용 도구로 조회 |
 | 자유 SQL 제한 | 전용 도구로 안 되는 질문만, **스키마 조회 도구를 먼저 부른 경우에만** `execute_baseball_select` 허용 (최대 50행) |
 | 답변 규칙 | SQL · 테이블명 · 도구 이름 같은 내부 용어는 답변에 쓰지 않음 |
+| 범위 밖 질문 차단 | 축구 · 영화 등 무관한 주제는 LLM 없이 고정 안내. **코딩 · 숙제 · 주식 · 코인 · 부동산 · 자동차 구매**처럼 직관과 접점이 없는 주제는 "야구 좋아하는데 코딩 알려줘"처럼 야구 단어가 섞여도 차단 |
+| 진행 기록 공개 범위 | 화면에는 도구 이름 · 단계 · 상태만 보냄. 입력값 · 결과는 허용한 키만 걸러 **관리자 계정에만** 표시 (SQL · 스키마 · URL은 저장하지 않음) |
 
 ### 4.4 코스 장소 선정 기준
 
@@ -285,9 +288,9 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ### 5.3 전처리 파이프라인
 
-<p align="center"><a href="./docs/architecture/data_pipeline.html"><img src="./docs/images/data_pipeline.gif" width="95%" alt="데이터 수집 · 전처리 · 인덱싱 흐름 (움직이는 그림)"/></a></p>
+<p align="center"><a href="./docs/images/data_pipeline.svg"><img src="./docs/images/data_pipeline.gif" width="95%" alt="데이터 수집 · 전처리 · 인덱싱 흐름 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/data_pipeline.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 🔍 <b>그림을 누르면 크게 볼 수 있어요</b> (확대해도 선명한 SVG) · 단계별 설명이 되는 <a href="./docs/architecture/data_pipeline.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 ### 5.4 전처리 규칙
 
@@ -317,22 +320,30 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ### 6.1 전체 흐름
 
-<p align="center"><a href="./docs/architecture/chat_pipeline.html"><img src="./docs/images/chat_pipeline.gif" width="95%" alt="챗봇 RAG · 에이전트 흐름 (움직이는 그림)"/></a></p>
+<p align="center"><a href="./docs/images/chat_pipeline.svg"><img src="./docs/images/chat_pipeline.gif" width="95%" alt="챗봇 RAG · 에이전트 흐름 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/chat_pipeline.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 🔍 <b>그림을 누르면 크게 볼 수 있어요</b> (확대해도 선명한 SVG) · 단계별 설명이 되는 <a href="./docs/architecture/chat_pipeline.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 ```
-질문 → dispatcher(야구 무관만 차단, LLM 0회)
-     → retrieve(임베딩 1회) → build_prompt → agent(LLM 1~5회) → parse_output
-     → persona.finalize(말투 통일, LLM 0회)
+질문 → dispatcher(범위 밖 질문 차단, LLM 0회)
+     → retrieve(임베딩 1회) → build_prompt
+     → 도구 계획(LLM, 도구 최대 4회) → 최종 답변(LLM 토큰 스트리밍)
+     → SSE: checkpoint → progress(도구 진행) … → delta(답변 조각) … → done(코스 · 지도)
 ```
 
 `chain = RunnableLambda(retrieve) | RunnableLambda(build_prompt) | agent | RunnableLambda(parse_output)`
 
-- **스위치 없음** — 모든 질문이 이 한 줄로 갑니다. 테스트 러너 안에서만 꺼져 기존 회귀 테스트를 보호합니다.
-- **실패 대체** — 에이전트가 예외를 내거나 빈 답을 주면 같은 질문을 기존 도메인 모듈로 다시 답합니다 (`route`에 `agent:error>` 기록).
+- **스위치 없음** — 모든 질문이 이 흐름으로 갑니다. 테스트 러너 안에서만 꺼져 기존 회귀 테스트를 보호합니다.
+- **실시간 응답** — 도구 계획 단계의 LLM 출력은 화면에 보내지 않고, 마지막 답변만 토큰이 오는 대로 `delta` 이벤트로 흘립니다 (`assistant.stream_answer`).
+- **진행 표시** — 검색 · 도구 호출이 시작 · 완료 · 실패할 때마다 `progress` 이벤트를 보내고, 회원 대화는 `ChatProgressEvent`에 저장해 대화를 다시 열어도 도구 로그가 남습니다 (`llm/progress.py`).
+- **범위 밖 차단** — 무관 주제 단어가 있고 야구 단어가 없으면 차단합니다. 코딩 · 숙제 · 주식 · 코인 · 자동차 구매 등은 야구 단어가 섞여도 차단합니다 (`dispatcher.HARD_OFF`).
+- **실패 대체** — 답변 조각을 보내기 전에 에이전트가 실패하면 같은 질문을 기존 도메인 모듈로 다시 답합니다 (`route`에 `agent:error>` 기록).
 
 ### 6.2 에이전트 도구
+
+모든 답변 에이전트(assistant · club · venue · course · nearby)가 **같은 도구 28개**를 공유합니다 (`llm/rag/domain_tools.py`). 이름이 겹치는 도구는 assistant 전용 구현을 우선합니다.
+
+**assistant 전용 도구 (9개)**
 
 | 도구 | 읽는 곳 | 용도 |
 | --- | --- | --- |
@@ -343,7 +354,19 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | `get_baseball_schema` → `execute_baseball_select` | 야구 DB 19개 테이블 | 위 4개로 안 되는 조회만. 스키마를 먼저 봐야 실행, 최대 50행 |
 | `search_kbo_documents` | pgvector | 다른 구장 · 주제 추가 검색 (근거 등급 포함) |
 | `search_nearby_places` | Kakao Local (백엔드) | 숙박 · 산책 · 실내 놀거리 · 편의점 |
-| `plan_course` | course 도메인 | 경기 전후 코스 → 지도 · 카드 |
+| `plan_course` | course 도메인 | 경기 전후 코스 → 지도 · 카드 (코스 생성 중에는 다시 호출하지 않음) |
+
+**공용 조회 도구 (19개)**
+
+| 분류 | 도구 | 읽는 곳 |
+| --- | --- | --- |
+| 구장 · 좌석 | `get_stadium` · `get_seat_zones` · `get_seat_views` · `get_seat_maps` · `get_ticket_policies` | 야구 DB |
+| 구장 안내 | `get_transport` · `get_food_stores` · `get_facilities` · `get_stadium_contents` · `search_documents_tool` | 야구 DB · pgvector |
+| 장소 · 이동 · 관광 · 날씨 | `search_places` · `get_directions` · `search_tourism` · `get_weather` | 카카오 · 관광 API · 날씨 API (백엔드에서만 호출) |
+| 코스 · 커뮤니티 | `search_courses` · `get_course` · `search_community_posts` · `get_prediction_games` | 서비스 DB |
+| 선수 | `search_players` | 야구 DB · TVING |
+
+> 일정 · 순위 · 가격(`get_games` · `get_standings` · `get_ticket_prices`)과 스키마 · SELECT 도구는 공용 목록에도 있지만 이름이 같아 assistant 전용 구현 하나만 연결됩니다.
 
 ### 6.3 프롬프트 설계
 
@@ -358,9 +381,9 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ### 6.4 코스 추천 흐름
 
-<p align="center"><a href="./docs/architecture/course_sequence.html"><img src="./docs/images/course_sequence.gif" width="95%" alt="직관 코스 추천 순서 (움직이는 그림)"/></a></p>
+<p align="center"><a href="./docs/images/course_sequence.svg"><img src="./docs/images/course_sequence.gif" width="95%" alt="직관 코스 추천 순서 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/course_sequence.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 🔍 <b>그림을 누르면 크게 볼 수 있어요</b> (확대해도 선명한 SVG) · 단계별 설명이 되는 <a href="./docs/architecture/course_sequence.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 > **좌표 환각이 0인 이유**: LLM에게서 받는 것은 `place_key · phase · reason · intro`뿐이고, 이름 · 좌표 · 주소 · 시각 · 거리는 전부 DB 값이거나 코드가 계산한 값입니다.
 
@@ -381,7 +404,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | LLM 생성 | **2,643 ms** | 2,556 ms | 10,971 ms |
 | 전체 | 2,661 ms | 2,567 ms | 10,993 ms |
 
-➡️ 응답 시간의 **99% 이상이 LLM 생성**입니다. 벡터DB는 병목이 아니므로, 속도 개선은 정해진 질문을 DB 결과로 바로 답하기 · 도구 호출 수 제한(최대 4회) · 모델 설정 조정 쪽에서 합니다. 에이전트 파이프라인은 도구를 부르는 만큼 LLM을 다시 호출해 3 ~ 7초가 걸립니다.
+➡️ 응답 시간의 **99% 이상이 LLM 생성**입니다. 벡터DB는 병목이 아니므로, 속도 개선은 정해진 질문을 DB 결과로 바로 답하기 · 도구 호출 수 제한(최대 4회) · 모델 설정 조정 쪽에서 합니다. 에이전트 파이프라인은 도구를 부르는 만큼 LLM을 다시 호출해 3 ~ 7초가 걸리므로, **최종 답변은 토큰 스트리밍으로 바로 보여 주고 기다리는 동안은 도구 진행 상황을 표시**합니다.
 
 ---
 
@@ -389,16 +412,16 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 > 🔴 필수 산출물 · 상세: [`docs/deliverables/02_시스템아키텍처.md`](./docs/deliverables/02_시스템아키텍처.md)
 
-<p align="center"><a href="./docs/architecture/system_architecture.html"><img src="./docs/images/system_architecture.gif" width="100%" alt="시스템 아키텍처 (움직이는 그림)"/></a></p>
+<p align="center"><a href="./docs/images/system_architecture.svg"><img src="./docs/images/system_architecture.gif" width="100%" alt="시스템 아키텍처 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/system_architecture.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 🔍 <b>그림을 누르면 크게 볼 수 있어요</b> (확대해도 선명한 SVG) · 단계별 설명이 되는 <a href="./docs/architecture/system_architecture.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 | 계층 | 구성 | 역할 |
 | --- | --- | --- |
 | Client | Next.js 16 · React 19 · Kakao Map SDK | 채팅, 지도 · 코스, 일정 · 순위, 커뮤니티 화면 |
 | Gateway | Nginx `:80` | `/` → frontend, `/api/` → backend |
-| API | Django 6.1 · DRF · SimpleJWT | 인증, 채팅(SSE), 코스, 커뮤니티, 야구 데이터 API |
-| LLM | LangChain `create_agent` · OpenAI | 검색 → 프롬프트 → 에이전트(도구 호출) → 파서 |
+| API | Django 6.1 · DRF · SimpleJWT | 인증, 채팅(SSE 스트리밍 · 진행 표시), 코스, 커뮤니티, 야구 데이터 API |
+| LLM | LangChain · OpenAI (Responses API) | 검색 → 프롬프트 → 도구 계획(도구 28개) → 답변 토큰 스트리밍 |
 | Vector DB | PostgreSQL 18 + pgvector | 3,839개 문서 청크 + 메타데이터(JSONB) |
 | RDB | PostgreSQL 18 (같은 인스턴스) | 야구 19개 테이블 · 회원 · 채팅 · 코스. 챗봇은 읽기 전용 계정으로만 조회 |
 | Storage · Mail | MinIO · Mailpit | 커뮤니티 이미지, 비밀번호 재설정 메일 |
@@ -413,6 +436,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 ## 8. 데이터베이스 설계
 
 <p align="center"><img src="./docs/images/erd.png" width="90%" alt="데이터베이스 ERD"/></p>
+<p align="center"><sub>🔍 그림을 누르면 원본 크기로 볼 수 있어요</sub></p>
 
 
 | 영역 | 주요 테이블 |
@@ -520,14 +544,14 @@ docker compose exec backend python manage.py check_index
 
 ## 12. 화면 설계 · UX Flow
 
-<p align="center"><a href="./docs/architecture/ux_flow.html"><img src="./docs/images/ux_flow.gif" width="95%" alt="화면 흐름 (움직이는 그림)"/></a></p>
+<p align="center"><a href="./docs/images/ux_flow.svg"><img src="./docs/images/ux_flow.gif" width="95%" alt="화면 흐름 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/ux_flow.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 🔍 <b>그림을 누르면 크게 볼 수 있어요</b> (확대해도 선명한 SVG) · 단계별 설명이 되는 <a href="./docs/architecture/ux_flow.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 | 화면 | 설명 | 캡처 |
 | --- | --- | --- |
 | 메인 (`/`) | 챗봇 질문, 당일 경기 · 선발 투수, 팀 순위, 샘플 코스 | [TODO] |
-| 챗봇 | 구장 선택 후 질문, 답변 스트리밍, 코스 답변 시 지도 자동 표시 | [TODO] |
+| 챗봇 | 구장 선택 후 질문, 답변 실시간 표시, 도구 진행 로그(✓ 완료 · ! 실패), 코스 답변 시 지도 자동 표시 | [TODO] |
 | 직관 코스 (`/routes`, `/routes/[id]`, `/routes/new`) | 코스 목록 · 상세(지도 · 방문 순서) · 직접 만들기(반경 2.5km 장소 탐색) | [TODO] |
 | 구장 정보 (`/stadiums`, `/guide`) | 9개 구장 위치 안내, 기초 규칙 · 관람 체크리스트 | [TODO] |
 | 커뮤니티 (`/community`) | 자유 · 구단별 게시판, 승부 예측 | [TODO] |
@@ -542,9 +566,10 @@ docker compose exec backend python manage.py check_index
 | Method | Endpoint (Nginx 경유) | 설명 |
 | --- | --- | --- |
 | GET · POST | `/api/chat/sessions/` | 채팅방 목록 · 생성 (JWT) |
-| POST | `/api/chat/sessions/{id}/messages/` | 회원 채팅 — RAG 답변 SSE 스트리밍 |
+| POST | `/api/chat/sessions/{id}/messages/` | 회원 채팅 — SSE (`checkpoint` · `progress` · `delta` · `done` · `error`) |
+| GET | `/api/chat/sessions/{id}/turns/` | 대화 턴 목록 + 턴별 도구 진행 기록 |
 | POST | `/api/chat/turns/{turn_id}/finalize/` | 답변 중단 · 확정 처리 |
-| POST | `/api/chat/guest/` | 게스트 채팅 (로그인 없이 RAG) |
+| POST | `/api/chat/guest/` | 게스트 채팅 — SSE (`progress` · `delta` · `done`, 기록 저장 안 함) |
 | GET · POST | `/api/courses/` | 코스 목록 · 저장 |
 | GET · PATCH · DELETE | `/api/courses/{id}/` | 코스 상세 · 수정 · 삭제 |
 | POST | `/api/courses/{id}/reaction/` | 좋아요 |
@@ -559,9 +584,9 @@ docker compose exec backend python manage.py check_index
 
 ## 14. 배포 (AWS · Docker · Nginx · CI/CD)
 
-<p align="center"><a href="./docs/architecture/deploy_cicd.html"><img src="./docs/images/deploy_cicd.gif" width="95%" alt="협업 · CI/CD 배포 흐름 (움직이는 그림)"/></a></p>
+<p align="center"><a href="./docs/images/deploy_cicd.svg"><img src="./docs/images/deploy_cicd.gif" width="95%" alt="협업 · CI/CD 배포 흐름 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/deploy_cicd.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 🔍 <b>그림을 누르면 크게 볼 수 있어요</b> (확대해도 선명한 SVG) · 단계별 설명이 되는 <a href="./docs/architecture/deploy_cicd.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 - **CI** — develop 대상 PR · push마다 Django `manage.py check` + Next.js `build`
 - **CD** — develop push 시 `appleboy/ssh-action`으로 EC2에 접속해 재빌드 (비밀값은 GitHub Secrets `EC2_HOST` · `EC2_USER` · `EC2_SSH_KEY`)
@@ -639,14 +664,17 @@ club 55문항, `rag_test` 체인, 2026-09-14
 | TC-10 | 틀린 전제 | 삼성 라이온즈 3위 맞지? | 실제 순위로 바로잡기 | ✅ "2위예요" |
 | TC-11 | 별칭 | 기아 몇 위야? | 기아 → KIA 인식 | ✅ |
 | TC-12 | 취소 · 환불 | 예매한 티켓 환불하려면 어떻게 해? | 예매처 문의 고정 안내 | ✅ |
+| TC-13 | 야구 단어가 섞인 무관 질문 | 야구 좋아하는데 코딩 알려줘 | 범위 밖 안내 (LLM 0회) | ✅ dispatcher 규칙 + 단위 테스트 |
 
-> TC-01 ~ 03 · 07 · 08은 2026-09-15 로컬 서버(에이전트 파이프라인)에서, TC-04 · 05 · 09 ~ 12는 2026-09-14 골든셋 평가에서 확인한 결과입니다. TC-06은 dispatcher 규칙(무관 주제 단어 + 야구 단어 없음)을 코드로 확인한 결과입니다.
+> TC-01 ~ 03 · 07 · 08은 2026-09-15 로컬 서버(에이전트 파이프라인)에서, TC-04 · 05 · 09 ~ 12는 2026-09-14 골든셋 평가에서 확인한 결과입니다. TC-06 · 13은 dispatcher 규칙(무관 주제 단어 + 야구 단어 없음, 또는 항상 차단하는 주제)을 코드와 단위 테스트로 확인한 결과입니다.
 
 **단위 테스트**
 
 ```bash
 cd backend
-python -m unittest llm.rag.assistant.test_assistant   # 18건: 프롬프트 · 파서 · 도구 · SQL 검증 · 실패 대체
+python manage.py test llm.rag.assistant.test_assistant   # 28건: 프롬프트 · 파서 · 도구 · SQL 검증 · 스트리밍 · 실패 대체 · 범위 차단
+python manage.py test llm.test_progress                  # 19건: 진행 이벤트 · 민감값 제거 · 저장 · 중단 처리
+python manage.py test llm.test_rag_domain_bindings       # 18건: 에이전트별 도구 28개 연결
 python -m unittest llm.rag.nearby.test_nearby         # 8건
 python -m unittest llm.rag.course.test_transport      # 12건
 python manage.py test baseball.tests.test_query_service
@@ -746,7 +774,6 @@ python manage.py test baseball.tests.test_query_service
 - **장소 인기 신호 추가**: 지금은 평점·리뷰 데이터가 없어 거리·동선·조건으로만 고릅니다. 우리 사이트 코스에 많이 담긴 장소 가중치, 공공 관광 데이터, 사용자 별점을 붙여 "실제로 많이 가는 곳"을 반영할 계획입니다.
 - **주점·야간 장소 수집 보강**: 카카오 API의 카테고리당 45건 제한 때문에 주점이 9개 구장 합계 11곳뿐입니다. 키워드 검색으로 따로 수집합니다.
 - **진짜 증분 인덱싱**: `doc_id + content_hash`로 바뀐 행만 다시 임베딩하고 upsert (지금은 임베딩만 재사용하고 테이블은 전체 교체)
-- **토큰 스트리밍**: 지금은 완성된 답을 24자씩 잘라 흘림 → LLM 토큰을 바로 흘려 첫 글자까지의 시간 단축
 - **경기 결과 · 순위 자동 갱신**: 수집 스크립트 → DB upsert 스케줄러
 - **평가 자동화**: 에이전트 파이프라인으로 골든셋 전체 재평가, PR마다 골든셋 회귀 실행
 
