@@ -1,14 +1,14 @@
 from django.core.management.base import BaseCommand
 
-from tving.models import TvingSnapshot
+from baseball.models import ProviderSnapshot
 from tving.relational import persist_athlete, persist_daily, persist_month, persist_team
 
 
 PERSISTERS = {
-    TvingSnapshot.DAILY: persist_daily,
-    TvingSnapshot.MONTH: persist_month,
-    TvingSnapshot.TEAM: persist_team,
-    TvingSnapshot.ATHLETE: persist_athlete,
+    ProviderSnapshot.DAILY: persist_daily,
+    ProviderSnapshot.MONTH: persist_month,
+    ProviderSnapshot.TEAM: persist_team,
+    ProviderSnapshot.ATHLETE: persist_athlete,
 }
 
 
@@ -17,7 +17,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         migrated = skipped = 0
-        for snapshot in TvingSnapshot.objects.order_by("pk").iterator():
+        for snapshot in ProviderSnapshot.objects.order_by("pk").iterator():
             try:
                 PERSISTERS[snapshot.resource_kind](snapshot.payload, snapshot.source_fetched_at)
             except Exception as error:

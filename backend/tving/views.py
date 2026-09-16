@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 
-from .models import TvingPlayer, TvingSnapshot
+from baseball.models import Player, ProviderSnapshot
 from .serializers import (
     AthleteResponseSerializer, DailyResponseSerializer, ErrorResponseSerializer,
     EntityPageResponseSerializer, MonthResponseSerializer, PlayerEntityResponseSerializer,
@@ -141,7 +141,7 @@ class SnapshotDetailView(APIView):
         return [AllowAny()] if self.request.method == "GET" else [IsAdminUser()]
 
     def _get(self, pk):
-        return TvingSnapshot.objects.filter(pk=pk).first()
+        return ProviderSnapshot.objects.filter(pk=pk).first()
 
     @extend_schema(operation_id="tving_snapshots_retrieve", responses={200: SnapshotResponseSerializer, 404: ErrorResponseSerializer, 503: ErrorResponseSerializer})
     def get(self, request, pk):
@@ -220,7 +220,7 @@ class PlayerEntityDetailView(APIView):
         return [AllowAny()] if self.request.method == "GET" else [IsAdminUser()]
 
     def _get(self, code):
-        return TvingPlayer.objects.filter(pk=code).select_related("team").first()
+        return Player.objects.filter(pk=code).select_related("team").first()
 
     @extend_schema(responses={200: PlayerEntityResponseSerializer, 404: ErrorResponseSerializer, 503: ErrorResponseSerializer})
     def get(self, request, code):

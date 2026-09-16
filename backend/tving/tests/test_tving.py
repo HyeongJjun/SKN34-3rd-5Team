@@ -4,7 +4,7 @@ from io import StringIO
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone as datetime_timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
@@ -12,12 +12,11 @@ from django.db import close_old_connections
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
-from baseball.models import Game, StandingHistory, Team
+from baseball.models import Game, Player, PlayerSeasonRecord, ProviderSnapshot, ScheduleDay, StandingHistory, Team
 from baseball.data_loader import stable_id
 
-from tving.models import TvingPlayer, TvingPlayerSeasonRecord, TvingScheduleDay, TvingSnapshot
 from tving.parsers import TvingValidationError, parse_calendar, parse_schedule, parse_standings
-from tving.service import TvingInputError, TvingUpstreamError, _NoRedirect, _persist_if_due, create_snapshot, read_snapshot, search_entities, search_snapshots
+from tving.service import TvingInputError, TvingUpstreamError, _NoRedirect, _persist_if_due, create_snapshot, read_snapshot, refresh_athlete, refresh_daily, refresh_month, refresh_team, search_entities, search_snapshots
 from tving.relational import daily_sync_time, persist_athlete, persist_daily, persist_team, read_athlete, read_daily, read_team
 
 
@@ -87,12 +86,12 @@ class SyncPolicyTests(TestCase):
         snapshot, wrote = _persist_if_due("daily", "2026-09-15", daily_payload(), now + timedelta(seconds=599))
         self.assertFalse(wrote)
         self.assertEqual(snapshot.updated_at, first_updated)
-        with patch.object(TvingSnapshot, "save", side_effect=AssertionError("fresh row must not UPDATE")):
+        with patch.object(ProviderSnapshot, "save", side_effect=AssertionError("fresh row must not UPDATE")):
             self.assertFalse(_persist_if_due("daily", "2026-09-15", daily_payload(), now + timedelta(seconds=599))[1])
         snapshot, wrote = _persist_if_due("daily", "2026-09-15", daily_payload(), now + timedelta(seconds=600))
-        self.assertFalse(wrote)
-        snapshot, wrote = _persist_if_due("daily", "2026-09-15", daily_payload(), now + timedelta(seconds=601))
         self.assertTrue(wrote)
+        snapshot, wrote = _persist_if_due("daily", "2026-09-15", daily_payload(), now + timedelta(seconds=601))
+        self.assertFalse(wrote)
         snapshot.last_synced_at = None
         snapshot.save(update_fields=("last_synced_at",))
         self.assertTrue(_persist_if_due("daily", "2026-09-15", daily_payload(), now + timedelta(seconds=602))[1])
@@ -128,7 +127,7 @@ class ConcurrencyTests(TransactionTestCase):
                 close_old_connections()
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(lambda _: write(), range(2)))
-        self.assertEqual(TvingSnapshot.objects.filter(resource_kind="daily", resource_key="2026-09-15").count(), 1)
+        self.assertEqual(ProviderSnapshot.objects.filter(resource_kind="daily", resource_key="2026-09-15").count(), 1)
         self.assertEqual(results.count(True), 1)
 
     def test_concurrent_relational_refresh_keeps_one_row_per_identity(self):
@@ -143,15 +142,15 @@ class ConcurrencyTests(TransactionTestCase):
                 close_old_connections()
         with ThreadPoolExecutor(max_workers=2) as pool:
             list(pool.map(lambda _: write(), range(2)))
-        self.assertEqual(TvingScheduleDay.objects.count(), 1)
+        self.assertEqual(ScheduleDay.objects.count(), 1)
         self.assertEqual(StandingHistory.objects.filter(source="tving").count(), 10)
-        self.assertEqual(TvingPlayerSeasonRecord.objects.count(), 2)
+        self.assertEqual(PlayerSeasonRecord.objects.count(), 2)
 
 
 class ToolAndApiTests(TestCase):
     def setUp(self):
         self.now = timezone.now()
-        self.snapshot = TvingSnapshot.objects.create(resource_kind="daily", resource_key="2026-09-15", payload=daily_payload(), source_fetched_at=self.now, last_synced_at=self.now)
+        self.snapshot = ProviderSnapshot.objects.create(resource_kind="daily", resource_key="2026-09-15", payload=daily_payload(), source_fetched_at=self.now, last_synced_at=self.now)
         self.client = APIClient()
 
     def test_db_only_read_and_search_do_not_call_provider(self):
@@ -208,12 +207,19 @@ class ToolAndApiTests(TestCase):
 
 @override_settings(EXTERNAL_DATA_SYNC_INTERVAL_SECONDS=600)
 class RelationalPersistenceTests(TestCase):
+    def test_player_records_are_baseball_canonical_models(self):
+        persist_daily(relational_daily(), timezone.now())
+        self.assertEqual(Player.objects.count(), 2)
+        self.assertEqual(PlayerSeasonRecord.objects.count(), 2)
+        self.assertIs(Player, Player)
+        self.assertIs(PlayerSeasonRecord, PlayerSeasonRecord)
+
     def test_daily_uses_fk_entities_and_does_not_mark_ranking_players_profile_fresh(self):
         now = datetime(2026, 9, 15, 1, tzinfo=datetime_timezone.utc)
         persist_daily(relational_daily(), now)
         self.assertEqual(StandingHistory.objects.filter(source="tving").count(), 10)
-        self.assertEqual(TvingPlayerSeasonRecord.objects.count(), 2)
-        self.assertEqual(TvingPlayer.objects.filter(profile_last_synced_at__isnull=True).count(), 2)
+        self.assertEqual(PlayerSeasonRecord.objects.count(), 2)
+        self.assertEqual(Player.objects.filter(profile_last_synced_at__isnull=True).count(), 2)
         self.assertEqual(read_daily("2026-09-15")["standings"][0]["teamCode"], "SS")
 
     def test_per_entity_null_exact_stale_and_future_freshness(self):
@@ -224,7 +230,8 @@ class RelationalPersistenceTests(TestCase):
         kt = StandingHistory.objects.get(team__team_code="KT", source="tving")
         samsung_updated, kt_updated = samsung.updated_at, kt.updated_at
         persist_daily(payload, now + timedelta(seconds=600))
-        samsung.refresh_from_db(); self.assertEqual(samsung.updated_at, samsung_updated)
+        samsung.refresh_from_db(); self.assertNotEqual(samsung.updated_at, samsung_updated)
+        kt.refresh_from_db(); kt_updated = kt.updated_at
         samsung.last_synced_at = None; samsung.save(update_fields=("last_synced_at",))
         kt.last_synced_at = now + timedelta(days=1); kt.save(update_fields=("last_synced_at",))
         persist_daily(payload, now + timedelta(seconds=601))
@@ -237,20 +244,20 @@ class RelationalPersistenceTests(TestCase):
         payload["standings"][1]["teamCode"] = "XX"
         with self.assertRaises(Exception):
             persist_daily(payload, timezone.now())
-        self.assertFalse(TvingScheduleDay.objects.exists())
+        self.assertFalse(ScheduleDay.objects.exists())
         self.assertFalse(StandingHistory.objects.filter(source="tving").exists())
 
     def test_legacy_backfill_is_idempotent_and_preserves_malformed_rows(self):
         now = timezone.now()
-        TvingSnapshot.objects.create(resource_kind="daily", resource_key="2026-09-15", payload=relational_daily(), source_fetched_at=now, last_synced_at=now)
-        TvingSnapshot.objects.create(resource_kind="daily", resource_key="2026-09-16", payload={"broken": True}, source_fetched_at=now, last_synced_at=now)
+        ProviderSnapshot.objects.create(resource_kind="daily", resource_key="2026-09-15", payload=relational_daily(), source_fetched_at=now, last_synced_at=now)
+        ProviderSnapshot.objects.create(resource_kind="daily", resource_key="2026-09-16", payload={"broken": True}, source_fetched_at=now, last_synced_at=now)
         first, second = StringIO(), StringIO()
         call_command("backfill_tving_snapshots", stdout=first, stderr=StringIO())
-        counts = (TvingScheduleDay.objects.count(), StandingHistory.objects.filter(source="tving").count(), TvingPlayer.objects.count())
+        counts = (ScheduleDay.objects.count(), StandingHistory.objects.filter(source="tving").count(), Player.objects.count())
         call_command("backfill_tving_snapshots", stdout=second, stderr=StringIO())
-        self.assertEqual(counts, (TvingScheduleDay.objects.count(), StandingHistory.objects.filter(source="tving").count(), TvingPlayer.objects.count()))
+        self.assertEqual(counts, (ScheduleDay.objects.count(), StandingHistory.objects.filter(source="tving").count(), Player.objects.count()))
         self.assertIn("migrated=1 skipped=1 preserved=2", first.getvalue())
-        self.assertEqual(TvingSnapshot.objects.count(), 2)
+        self.assertEqual(ProviderSnapshot.objects.count(), 2)
 
     def test_absent_team_and_athlete_children_remain_stored_but_leave_current_projection(self):
         now = timezone.now()
@@ -261,7 +268,7 @@ class RelationalPersistenceTests(TestCase):
         team["rosters"]["pitcher"].pop()
         team["rankings"]["pitcher"][0]["athletes"].pop()
         persist_team(team, now + timedelta(seconds=601))
-        self.assertEqual(TvingPlayer.objects.filter(pk__in=("10001", "10002")).count(), 2)
+        self.assertEqual(Player.objects.filter(pk__in=("10001", "10002")).count(), 2)
         self.assertEqual([row["code"] for row in read_team("SS")["rosters"]["pitcher"]], ["10001"])
         self.assertEqual([row["code"] for row in read_team("SS")["rankings"]["pitcher"][0]["athletes"]], ["10001"])
 
@@ -269,7 +276,7 @@ class RelationalPersistenceTests(TestCase):
         persist_athlete(athlete, now)
         athlete["seasonRecords"].pop(); athlete["careerRows"].pop()
         persist_athlete(athlete, now + timedelta(seconds=601))
-        player = TvingPlayer.objects.get(pk="10001")
+        player = Player.objects.get(pk="10001")
         self.assertEqual(player.season_records.filter(record_kind="detail").count(), 2)
         self.assertEqual(player.career_records.count(), 2)
         projected = read_athlete("10001")
@@ -291,6 +298,23 @@ class TvingCsvPriorityTests(TestCase):
         self.assertEqual((promoted.pk, promoted.game_code, promoted.source, promoted.last_synced_at, promoted.home_score), (original_id, original_code, "tving", synced_at, score))
         self.assertEqual(Game.objects.filter(game_date="2026-09-08", home_team__team_code="SAMSUNG", away_team__team_code="KIA", game_time="18:30").count(), 1)
 
+    def test_provider_missing_fields_preserve_existing_values_but_zero_updates(self):
+        payload = relational_game_day()
+        target = next(game for game in payload["games"] if game["id"] == "20260908HTSS02026")
+        now = timezone.now()
+        persist_daily(payload, now)
+        row = Game.objects.get(source_external_code=target["id"])
+        row.home_starting_pitcher = "보존 투수"
+        row.source_status_label = "보존 상태"
+        row.home_score = 7
+        row.save(update_fields=("home_starting_pitcher", "source_status_label", "home_score"))
+        target["home"]["startingPitcher"] = None
+        target["statusLabel"] = ""
+        target["home"]["score"] = 0
+        persist_daily(payload, now + timedelta(seconds=601))
+        row.refresh_from_db()
+        self.assertEqual((row.home_starting_pitcher, row.source_status_label, row.home_score), ("보존 투수", "보존 상태", 0))
+
     def test_tving_first_then_csv_uses_one_canonical_game_and_csv_only_survives(self):
         matching = Game.objects.get(game_code="schedule_56ea63868b602cdd")
         matching.delete()
@@ -302,11 +326,19 @@ class TvingCsvPriorityTests(TestCase):
         created = Game.objects.get(source_external_code="20260908HTSS02026")
         self.assertTrue(created.game_code.startswith("tving:"))
         self.assertNotEqual(created.pk, occupied_id)
+        created.home_score = 0
+        created.status_code = "live"
+        created.save(update_fields=("home_score", "status_code"))
         count = Game.objects.count()
+        call_command("import_baseball_data", data_dir=self.data_dir, stdout=StringIO())
+        created.refresh_from_db()
+        first_state = (created.pk, created.stadium_id)
         call_command("import_baseball_data", data_dir=self.data_dir, stdout=StringIO())
         self.assertEqual(Game.objects.count(), count)
         created.refresh_from_db(); csv_only.refresh_from_db()
-        self.assertEqual(created.source, "tving")
+        self.assertEqual((created.source, created.home_score, created.status_code), ("tving", 0, "live"))
+        self.assertEqual((created.pk, created.stadium_id), first_state)
+        self.assertIsNotNone(created.stadium_id)
         self.assertEqual(csv_only.source, "csv")
 
     def test_existing_csv_standing_and_team_are_promoted_without_duplicates(self):
@@ -372,7 +404,7 @@ class TvingCsvPriorityTests(TestCase):
         pitcher = payload["individualRankings"]["pitchers"][0]
         pitcher.update(teamCode="KT", team="KT", player="이적 투수")
         persist_daily(payload, now + timedelta(seconds=1))
-        player = TvingPlayer.objects.get(pk="10001")
+        player = Player.objects.get(pk="10001")
         self.assertEqual((player.team.team_code, player.name), ("SAMSUNG", "투수"))
         persist_daily(payload, now + timedelta(seconds=601))
         player.refresh_from_db()
@@ -413,7 +445,7 @@ class RelationalToolApiTests(TestCase):
 class FallbackTests(TestCase):
     def test_malformed_provider_uses_relational_fallback_and_marks_stale(self):
         now = timezone.now()
-        persist_daily(relational_daily(), now)
+        persist_daily(relational_daily(), now - timedelta(seconds=600))
         from tving.service import _fresh_or_fallback
         day = datetime.fromisoformat("2026-09-15").date()
         result = _fresh_or_fallback(lambda _previous: (_ for _ in ()).throw(TvingValidationError("partial")), persist_daily, lambda: read_daily("2026-09-15"), lambda: daily_sync_time(day), daily=True)
@@ -429,10 +461,79 @@ class FallbackTests(TestCase):
     def test_failed_write_rolls_back_complete_existing_payload(self):
         now = timezone.now()
         original = daily_payload()
-        TvingSnapshot.objects.create(resource_kind="daily", resource_key="2026-09-15", payload=original, source_fetched_at=now, last_synced_at=now - timedelta(hours=1))
-        with patch.object(TvingSnapshot, "save", side_effect=RuntimeError("disk full")), self.assertRaises(RuntimeError):
+        ProviderSnapshot.objects.create(resource_kind="daily", resource_key="2026-09-15", payload=original, source_fetched_at=now, last_synced_at=now - timedelta(hours=1))
+        with patch.object(ProviderSnapshot, "save", side_effect=RuntimeError("disk full")), self.assertRaises(RuntimeError):
             _persist_if_due("daily", "2026-09-15", {**original, "sourceUpdatedAt": "changed"}, now)
-        self.assertEqual(TvingSnapshot.objects.get().payload, original)
+        self.assertEqual(ProviderSnapshot.objects.get().payload, original)
 
     def test_redirect_handler_refuses_followup_request(self):
         self.assertIsNone(_NoRedirect().redirect_request(None, None, 302, "moved", {}, "https://evil.example"))
+
+
+@override_settings(EXTERNAL_DATA_SYNC_INTERVAL_SECONDS=600)
+class CacheFirstRefreshTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        for index, (code, name) in enumerate((("SAMSUNG", "삼성 라이온즈"), ("KT", "KT 위즈"), ("LG", "LG 트윈스"), ("KIA", "KIA 타이거즈"), ("DOOSAN", "두산 베어스"), ("NC", "NC 다이노스"), ("HANWHA", "한화 이글스"), ("LOTTE", "롯데 자이언츠"), ("SSG", "SSG 랜더스"), ("KIWOOM", "키움 히어로즈")), 1):
+            Team.objects.get_or_create(team_code=code, defaults={"id": 800 + index, "team_name_ko": name})
+
+    def test_all_frontend_entrypoints_return_complete_fresh_db_without_provider(self):
+        now = timezone.now()
+        persist_daily(relational_daily(), now)
+        month = {"year": 2026, "month": "2026-08", "today": "2026-09-16", "games": [], "days": [{"date": f"2026-08-{day:02d}", "status": "empty", "gameCount": 0} for day in range(1, 32)], "loading": False}
+        from tving.relational import persist_month
+        persist_month(month, now)
+        persist_team(relational_team(), now)
+        persist_athlete(relational_athlete(), now)
+        provider = Mock(side_effect=AssertionError("fresh DB must not call TVING"))
+        self.assertFalse(refresh_daily("2026-09-15", provider)["stale"])
+        self.assertFalse(refresh_month("2026-08", provider)["stale"])
+        self.assertFalse(refresh_team("SS", provider)["stale"])
+        self.assertFalse(refresh_athlete("10001", provider)["stale"])
+        provider.assert_not_called()
+        with patch("tving.service._provider_json", side_effect=AssertionError("fresh HTTP entry must not call TVING")) as http_provider:
+            client = APIClient()
+            for path in ("/tving/daily/?date=2026-09-15", "/tving/schedule/?month=2026-08", "/tving/details/teams/SS/", "/tving/details/athletes/10001/"):
+                self.assertEqual(client.get(path).status_code, 200)
+        http_provider.assert_not_called()
+
+    def test_exact_boundary_refreshes_and_persists_daily_rows(self):
+        now = timezone.now()
+        persist_daily(relational_daily(), now)
+        changed = relational_daily()
+        changed["standings"][0]["wins"] = 99
+        provider = Mock(return_value={})
+        with patch("tving.service.timezone.now", return_value=now + timedelta(seconds=600)), patch("tving.service.parse_schedule", return_value=[]), patch("tving.service.parse_standings", return_value=changed["standings"]), patch("tving.service.parse_rankings", side_effect=[changed["individualRankings"]["pitchers"], changed["individualRankings"]["hitters"]]):
+            result = refresh_daily("2026-09-15", provider)
+        self.assertGreater(provider.call_count, 0)
+        self.assertEqual(result["standings"][0]["wins"], 99)
+        self.assertEqual(StandingHistory.objects.get(snapshot_date="2026-09-15", rank=1).wins, 99)
+
+    def test_absent_month_loads_and_valid_empty_month_is_cached(self):
+        provider = Mock(return_value={})
+        with patch("tving.service.parse_calendar", return_value=[]):
+            first = refresh_month("2026-07", provider)
+            calls = provider.call_count
+            second = refresh_month("2026-07", provider)
+        self.assertEqual(calls, 1)
+        self.assertEqual(provider.call_count, calls)
+        self.assertEqual((first["games"], second["games"]), ([], []))
+
+    def test_failed_stale_refresh_keeps_timestamp_and_marks_fallback_stale(self):
+        old = timezone.now() - timedelta(seconds=600)
+        persist_team(relational_team(), old)
+        before = read_team("SS")
+        with patch("tving.service.timezone.now", return_value=old + timedelta(seconds=600)):
+            result = refresh_team("SS", Mock(side_effect=TvingUpstreamError("down")))
+        self.assertTrue(result["stale"])
+        self.assertEqual(result["code"], before["code"])
+        self.assertEqual(Team.objects.get(team_code="SAMSUNG").provider_profile.last_synced_at, old)
+
+    def test_ranking_only_player_is_not_a_fresh_athlete_profile(self):
+        persist_daily(relational_daily(), timezone.now())
+        self.assertIsNone(read_athlete("10001"))
+        provider = Mock(return_value={})
+        with patch("tving.service.parse_athlete_detail", return_value=relational_athlete()):
+            refresh_athlete("10001", provider)
+        provider.assert_called_once()
+        self.assertIsNotNone(read_athlete("10001"))

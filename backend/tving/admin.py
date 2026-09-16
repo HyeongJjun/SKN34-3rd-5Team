@@ -1,11 +1,11 @@
 from django.contrib import admin
 
-from . import models
-from .models import TvingSnapshot
+from baseball import models
+from baseball.models import ProviderSnapshot
 
 
-@admin.register(TvingSnapshot)
-class TvingSnapshotAdmin(admin.ModelAdmin):
+@admin.register(ProviderSnapshot)
+class ProviderSnapshotAdmin(admin.ModelAdmin):
     list_display = ("resource_kind", "resource_key", "source_fetched_at", "last_synced_at")
     list_filter = ("resource_kind",)
     search_fields = ("resource_key",)
@@ -13,8 +13,8 @@ class TvingSnapshotAdmin(admin.ModelAdmin):
 
 
 admin.site.register([
-    models.TvingPlayer, models.TvingPlayerCareerRecord,
-    models.TvingPlayerSeasonRecord, models.TvingScheduleDay, models.TvingTeamProfile,
-    models.TvingTeamRoster, models.TvingTeamSeasonRecord,
-    models.TvingTeamTopPlayer,
+    models.Player, models.PlayerCareerRecord,
+    models.PlayerSeasonRecord, models.ScheduleDay, models.TeamProfile,
+    models.TeamRoster, models.TeamSeasonRecord,
+    models.TeamTopPlayer,
 ])

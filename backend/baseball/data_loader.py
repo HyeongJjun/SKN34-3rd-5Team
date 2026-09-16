@@ -148,11 +148,12 @@ class BaseballDataLoaderV1:
             if protected.count() > 1:
                 raise CommandError(f"ambiguous TVING game identity for CSV row: {key}")
             if protected.exists():
-                self.counts["Game.tving_skipped"] += 1
-                return protected.get()
+                return self.fill_tving_game(protected.get(), values)
         existing = manager.filter(**natural).first() if natural else None
         if existing:
             if "source" in field_names and getattr(existing, "source", "csv") == "tving":
+                if model.__name__ == "Game":
+                    return self.fill_tving_game(existing, values)
                 self.counts[f"{model.__name__}.tving_skipped"] += 1
                 return existing
             self.counts[f"{model.__name__}.skipped"] += 1
@@ -177,6 +178,22 @@ class BaseballDataLoaderV1:
             raise CommandError(f"{model.__name__}:{key} 적재 거부: {error}") from error
         self.counts[f"{model.__name__}.imported"] += 1
         return obj
+
+    def fill_tving_game(self, game, values):
+        updates = {}
+        for field in ("stadium", "postseason_stage"):
+            if getattr(game, f"{field}_id") is None and values.get(field) is not None:
+                updates[field] = values[field]
+        if game.game_type in (None, "", "UNKNOWN") and values.get("game_type") not in (None, ""):
+            updates["game_type"] = values["game_type"]
+        if updates:
+            for field, value in updates.items():
+                setattr(game, field, value)
+            game.save(update_fields=tuple(updates), using=self.alias)
+            self.counts["Game.tving_filled"] += 1
+        else:
+            self.counts["Game.tving_skipped"] += 1
+        return game
 
     def import_all(self):
         models = SimpleNamespace(**{name: self.model(name) for name in NATURAL_FIELDS})

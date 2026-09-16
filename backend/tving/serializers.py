@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import TvingSnapshot
+from baseball.models import ProviderSnapshot
 
 
 class SourceSerializer(serializers.Serializer):
@@ -111,7 +111,7 @@ class StatusResponseSerializer(ErrorResponseSerializer):
 
 class SnapshotSerializer(serializers.Serializer):
     id = serializers.IntegerField()
-    resourceKind = serializers.ChoiceField(choices=TvingSnapshot.KINDS)
+    resourceKind = serializers.ChoiceField(choices=ProviderSnapshot.KINDS)
     resourceKey = serializers.CharField()
     payload = serializers.JSONField()
     sourceFetchedAt = serializers.DateTimeField()
@@ -121,7 +121,7 @@ class SnapshotSerializer(serializers.Serializer):
 
 
 class SnapshotMutationSerializer(serializers.Serializer):
-    resourceKind = serializers.ChoiceField(choices=TvingSnapshot.KINDS, required=False)
+    resourceKind = serializers.ChoiceField(choices=ProviderSnapshot.KINDS, required=False)
     resourceKey = serializers.CharField(max_length=16, required=False)
     payload = serializers.JSONField()
     sourceFetchedAt = serializers.DateTimeField()

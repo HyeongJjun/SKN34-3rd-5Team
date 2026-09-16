@@ -12,8 +12,10 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import TvingPlayer, TvingPlayerSeasonRecord, TvingSnapshot, TvingTeamProfile, TvingTeamRoster, TvingTeamTopPlayer
-from baseball.models import Game, StandingHistory
+from baseball.models import (
+    Game, Player, PlayerSeasonRecord, ProviderSnapshot, StandingHistory,
+    TeamProfile, TeamRoster, TeamTopPlayer,
+)
 from .parsers import (
     ATHLETE_TYPES, POSITIONS, TEAM_CODES, TvingValidationError, compact_date,
     parse_athlete_detail, parse_calendar, parse_rankings, parse_schedule,
@@ -84,14 +86,14 @@ def _provider_json(path, params, opener=None):
 
 def _validate_identity(kind, key):
     try:
-        if kind == TvingSnapshot.DAILY:
+        if kind == ProviderSnapshot.DAILY:
             compact_date(key)
-        elif kind == TvingSnapshot.MONTH:
+        elif kind == ProviderSnapshot.MONTH:
             compact_date(f"{key}-01")
-        elif kind == TvingSnapshot.TEAM:
+        elif kind == ProviderSnapshot.TEAM:
             if key not in TEAM_CODES:
                 raise TvingInputError("존재하지 않는 KBO 구단입니다.")
-        elif kind == TvingSnapshot.ATHLETE:
+        elif kind == ProviderSnapshot.ATHLETE:
             if not isinstance(key, str) or not key.isdigit() or not 4 <= len(key) <= 12:
                 raise TvingInputError("선수 코드가 올바르지 않습니다.")
         else:
@@ -106,11 +108,11 @@ def _iso(value):
 
 def read_snapshot(kind, key):
     _validate_identity(kind, key)
-    return TvingSnapshot.objects.filter(resource_kind=kind, resource_key=key).first()
+    return ProviderSnapshot.objects.filter(resource_kind=kind, resource_key=key).first()
 
 
 def search_snapshots(*, kind=None, key=None, team=None, player=None, date=None, month=None, page=1, page_size=50):
-    if kind is not None and kind not in dict(TvingSnapshot.KINDS):
+    if kind is not None and kind not in dict(ProviderSnapshot.KINDS):
         raise TvingInputError("리소스 종류가 올바르지 않습니다.")
     if isinstance(page, bool) or not isinstance(page, int) or not 1 <= page <= 10_000 or isinstance(page_size, bool) or not isinstance(page_size, int) or not 1 <= page_size <= 100:
         raise TvingInputError("페이지 범위가 올바르지 않습니다.")
@@ -119,9 +121,9 @@ def search_snapshots(*, kind=None, key=None, team=None, player=None, date=None, 
             raise TvingInputError(f"{label} 검색 값이 올바르지 않습니다.")
     if team is not None and (not isinstance(team, str) or team.upper() not in TEAM_CODES):
         raise TvingInputError("team 검색 값이 올바르지 않습니다.")
-    if date is not None: _validate_identity(TvingSnapshot.DAILY, date)
-    if month is not None: _validate_identity(TvingSnapshot.MONTH, month)
-    query = TvingSnapshot.objects.all().order_by("resource_kind", "resource_key")
+    if date is not None: _validate_identity(ProviderSnapshot.DAILY, date)
+    if month is not None: _validate_identity(ProviderSnapshot.MONTH, month)
+    query = ProviderSnapshot.objects.all().order_by("resource_kind", "resource_key")
     if kind: query = query.filter(resource_kind=kind)
     if key: query = query.filter(resource_key=key)
     if team: query = query.filter(payload__icontains=team.upper())
@@ -143,7 +145,7 @@ def create_snapshot(*, kind, key, payload, source_fetched_at, actor):
     _validate_normalized(kind, key, payload)
     if not isinstance(source_fetched_at, datetime) or timezone.is_naive(source_fetched_at):
         raise TvingInputError("원천 조회 시각은 timezone-aware 값이어야 합니다.")
-    return TvingSnapshot.objects.create(resource_kind=kind, resource_key=key, payload=payload, source_fetched_at=source_fetched_at, last_synced_at=None)
+    return ProviderSnapshot.objects.create(resource_kind=kind, resource_key=key, payload=payload, source_fetched_at=source_fetched_at, last_synced_at=None)
 
 
 def update_snapshot(snapshot, *, payload, source_fetched_at, actor):
@@ -152,7 +154,7 @@ def update_snapshot(snapshot, *, payload, source_fetched_at, actor):
     if not isinstance(source_fetched_at, datetime) or timezone.is_naive(source_fetched_at):
         raise TvingInputError("원천 조회 시각은 timezone-aware 값이어야 합니다.")
     with transaction.atomic():
-        locked = TvingSnapshot.objects.select_for_update().get(pk=snapshot.pk)
+        locked = ProviderSnapshot.objects.select_for_update().get(pk=snapshot.pk)
         locked.payload, locked.source_fetched_at, locked.last_synced_at = payload, source_fetched_at, None
         locked.save(update_fields=("payload", "source_fetched_at", "last_synced_at", "updated_at"))
     return locked
@@ -172,7 +174,7 @@ def _validate_normalized(kind, key, payload):
         raise TvingInputError("payload가 올바른 JSON 객체가 아닙니다.")
     try:
         _safe_json(payload)
-        if kind == TvingSnapshot.DAILY:
+        if kind == ProviderSnapshot.DAILY:
             if payload.get("date") != key or len(payload.get("standings", [])) != 10 or not payload.get("individualRankings", {}).get("pitchers") or not payload.get("individualRankings", {}).get("hitters"):
                 raise ValueError
             games = payload.get("games")
@@ -183,21 +185,21 @@ def _validate_normalized(kind, key, payload):
             for values in payload["individualRankings"].values():
                 if any(not isinstance(row, dict) or not isinstance(row.get("playerCode"), str) or row.get("teamCode") not in TEAM_CODES or isinstance(row.get("rank"), bool) or not isinstance(row.get("rank"), int) for row in values):
                     raise ValueError
-        elif kind == TvingSnapshot.MONTH:
+        elif kind == ProviderSnapshot.MONTH:
             if payload.get("month") != key or not isinstance(payload.get("days"), list) or not isinstance(payload.get("games"), list):
                 raise ValueError
             if any(day.get("status") not in {"ready", "empty", "pending", "error"} or not isinstance(day.get("gameCount"), int) for day in payload["days"]):
                 raise ValueError
             if any(not _valid_game(game, game.get("date")) or not str(game.get("date", "")).startswith(f"{key}-") for game in payload["games"]):
                 raise ValueError
-        elif kind == TvingSnapshot.TEAM:
+        elif kind == ProviderSnapshot.TEAM:
             if payload.get("code") != key or not all(isinstance(payload.get(field), str) for field in ("teamName", "shortName", "seasonTitle")) or set(payload.get("rosters", {})) != set(POSITIONS) or set(payload.get("rankings", {})) != set(ATHLETE_TYPES):
                 raise ValueError
             if any(not isinstance(athlete, dict) or not isinstance(athlete.get("code"), str) or not isinstance(athlete.get("name"), str) for roster in payload["rosters"].values() for athlete in roster):
                 raise ValueError
             if not _valid_image(payload.get("teamImageUrl")) or not _valid_image(payload.get("backgroundImage")):
                 raise ValueError
-        elif kind == TvingSnapshot.ATHLETE:
+        elif kind == ProviderSnapshot.ATHLETE:
             profile = payload.get("profile", {})
             if profile.get("code") != key or profile.get("team", {}).get("code") not in TEAM_CODES or not isinstance(profile.get("name"), str) or not isinstance(profile.get("positions"), list):
                 raise ValueError
@@ -263,8 +265,8 @@ def _valid_image(value):
 def _persist_if_due(kind, key, payload, fetched_at):
     interval = timedelta(seconds=settings.EXTERNAL_DATA_SYNC_INTERVAL_SECONDS)
     with transaction.atomic():
-        snapshot = TvingSnapshot.objects.select_for_update().filter(resource_kind=kind, resource_key=key).first()
-        if snapshot and snapshot.last_synced_at is not None and fetched_at - snapshot.last_synced_at <= interval:
+        snapshot = ProviderSnapshot.objects.select_for_update().filter(resource_kind=kind, resource_key=key).first()
+        if snapshot and snapshot.last_synced_at is not None and fetched_at - snapshot.last_synced_at < interval:
             return snapshot, False
         if snapshot:
             snapshot.payload, snapshot.source_fetched_at, snapshot.last_synced_at = payload, fetched_at, fetched_at
@@ -272,11 +274,11 @@ def _persist_if_due(kind, key, payload, fetched_at):
             return snapshot, True
         try:
             with transaction.atomic():
-                snapshot = TvingSnapshot.objects.create(resource_kind=kind, resource_key=key, payload=payload, source_fetched_at=fetched_at, last_synced_at=fetched_at)
+                snapshot = ProviderSnapshot.objects.create(resource_kind=kind, resource_key=key, payload=payload, source_fetched_at=fetched_at, last_synced_at=fetched_at)
             return snapshot, True
         except IntegrityError:
-            snapshot = TvingSnapshot.objects.select_for_update().get(resource_kind=kind, resource_key=key)
-            if snapshot.last_synced_at is not None and fetched_at - snapshot.last_synced_at <= interval:
+            snapshot = ProviderSnapshot.objects.select_for_update().get(resource_kind=kind, resource_key=key)
+            if snapshot.last_synced_at is not None and fetched_at - snapshot.last_synced_at < interval:
                 return snapshot, False
             snapshot.payload, snapshot.source_fetched_at, snapshot.last_synced_at = payload, fetched_at, fetched_at
             snapshot.save(update_fields=("payload", "source_fetched_at", "last_synced_at", "updated_at"))
@@ -298,6 +300,12 @@ def _envelope(data, fetched_at, last_synced_at, *, stale=False, warning=None, so
 
 def _fresh_or_fallback(fetcher, persister, reader, sync_time, *, daily=False, source_url=None):
     previous = reader()
+    last_synced_at = sync_time() if previous is not None else None
+    checked_at = timezone.now()
+    if previous is not None and last_synced_at is not None and checked_at - last_synced_at < timedelta(seconds=settings.EXTERNAL_DATA_SYNC_INTERVAL_SECONDS):
+        if daily:
+            previous["nextCheckAt"] = _iso(last_synced_at + timedelta(seconds=settings.EXTERNAL_DATA_SYNC_INTERVAL_SECONDS))
+        return _envelope(previous, last_synced_at, last_synced_at, source_url=source_url)
     try:
         payload = fetcher(previous)
         fetched_at = timezone.now()
@@ -306,7 +314,7 @@ def _fresh_or_fallback(fetcher, persister, reader, sync_time, *, daily=False, so
         last_synced_at = persister(payload, fetched_at)
         return _envelope(payload, fetched_at, last_synced_at, source_url=source_url)
     except (TvingError, TvingValidationError, RelationalDataError, TypeError, AttributeError, KeyError, ValueError) as error:
-        if previous:
+        if previous is not None:
             last_synced_at = sync_time()
             return _envelope(previous, last_synced_at or timezone.now(), last_synced_at, stale=True, warning="최신 정보를 확인하지 못해 마지막으로 저장한 자료를 표시합니다.", source_url=source_url)
         if isinstance(error, TvingError):
@@ -314,8 +322,9 @@ def _fresh_or_fallback(fetcher, persister, reader, sync_time, *, daily=False, so
         raise TvingUpstreamError("TVING 응답 검증에 실패했습니다.") from None
 
 
-def refresh_daily(day, provider=_provider_json):
-    _validate_identity(TvingSnapshot.DAILY, day)
+def refresh_daily(day, provider=None):
+    provider = provider or _provider_json
+    _validate_identity(ProviderSnapshot.DAILY, day)
     compact = compact_date(day)
     year = day[:4]
     def fetch(previous):
@@ -334,8 +343,9 @@ def refresh_daily(day, provider=_provider_json):
     return _fresh_or_fallback(fetch, persist_daily, lambda: read_daily(day), lambda: daily_sync_time(parsed_day), daily=True)
 
 
-def refresh_month(month, provider=_provider_json):
-    _validate_identity(TvingSnapshot.MONTH, month)
+def refresh_month(month, provider=None):
+    provider = provider or _provider_json
+    _validate_identity(ProviderSnapshot.MONTH, month)
     def fetch(previous):
         calendar_payload = provider("/kbo/schedule/day", {"date": month.replace("-", "")})
         calendar = parse_calendar(calendar_payload, month)
@@ -363,11 +373,12 @@ def refresh_month(month, provider=_provider_json):
     return _fresh_or_fallback(fetch, persist_month, lambda: read_month(month, today), lambda: month_sync_time(month), source_url="https://www.tving.com/sports/kbo/schedule")
 
 
-def refresh_team(code, provider=_provider_json):
+def refresh_team(code, provider=None):
+    provider = provider or _provider_json
     if not isinstance(code, str):
         raise TvingInputError("존재하지 않는 KBO 구단입니다.")
     code = code.upper()
-    _validate_identity(TvingSnapshot.TEAM, code)
+    _validate_identity(ProviderSnapshot.TEAM, code)
     def fetch(_previous):
         with ThreadPoolExecutor(max_workers=7) as pool:
             main = pool.submit(provider, "/team", {"code": code, "sportsType": "kbo"})
@@ -380,17 +391,57 @@ def refresh_team(code, provider=_provider_json):
     return result
 
 
-def refresh_athlete(code, provider=_provider_json):
-    _validate_identity(TvingSnapshot.ATHLETE, code)
-    sync_time = lambda: athlete_sync_time(TvingPlayer.objects.get(external_code=code)) if TvingPlayer.objects.filter(external_code=code).exists() else None
+def refresh_athlete(code, provider=None):
+    provider = provider or _provider_json
+    _validate_identity(ProviderSnapshot.ATHLETE, code)
+    sync_time = lambda: athlete_sync_time(Player.objects.get(external_code=code)) if Player.objects.filter(external_code=code).exists() else None
     result = _fresh_or_fallback(lambda _previous: parse_athlete_detail(code, provider("/athlete", {"code": code, "sportsType": "kbo"})), persist_athlete, lambda: read_athlete(code), sync_time, source_url=f"https://www.tving.com/sports/kbo/athlete/{code}")
     result.update(collecting=False, progress=details_status())
     return result
 
 
+def ensure_game_range_fresh(start_date, end_date, provider=None):
+    """Refresh each requested schedule month through the same DB-first path as HTTP."""
+    month = start_date.replace(day=1)
+    end_month = end_date.replace(day=1)
+    stale = False
+    warnings = []
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    while month <= end_month:
+        if month.year <= today.year:
+            try:
+                result = refresh_month(month.strftime("%Y-%m"), provider)
+                stale = stale or result["stale"]
+                if result["warning"]:
+                    warnings.append(result["warning"])
+            except TvingError:
+                stale = True
+                warnings.append("최신 일정을 확인하지 못해 저장된 자료만 조회합니다.")
+        else:
+            stale = True
+            warnings.append("TVING이 아직 제공하지 않는 미래 일정은 저장된 자료만 조회합니다.")
+        month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return {"stale": stale, "warning": warnings[0] if warnings else None}
+
+
+def ensure_standings_fresh(snapshot_date=None, provider=None):
+    """Refresh current standings only; the provider has no historical standings endpoint."""
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    latest = StandingHistory.objects.order_by("-snapshot_date").values_list("snapshot_date", flat=True).first()
+    if snapshot_date is not None and snapshot_date != today:
+        return {"stale": True, "warning": "과거 날짜 순위는 현재 시즌 응답으로 덮어쓰지 않고 저장된 자료만 조회합니다."}
+    if snapshot_date is None and latest is not None and latest > today:
+        return {"stale": True, "warning": "미래 날짜 순위는 저장된 자료만 조회합니다."}
+    try:
+        result = refresh_daily(today.isoformat(), provider)
+        return {"stale": result["stale"], "warning": result["warning"]}
+    except TvingError:
+        return {"stale": True, "warning": "최신 순위를 확인하지 못해 저장된 자료만 조회합니다."}
+
+
 def details_status():
-    teams = TvingTeamProfile.objects.count()
-    athletes = TvingPlayer.objects.filter(profile_last_synced_at__isnull=False).count()
+    teams = TeamProfile.objects.count()
+    athletes = Player.objects.filter(profile_last_synced_at__isnull=False).count()
     return {"state": "partial" if teams or athletes else "idle", "generation": None, "startedAt": None, "completedAt": None, "teamTotal": 10, "teamDone": teams, "athleteTotal": athletes, "athleteDone": athletes, "failures": [], "strategy": "on-demand"}
 
 
@@ -409,8 +460,8 @@ def search_entities(*, kind, team=None, player=None, date=None, month=None, page
     mapped_team = team_for(team.upper()) if team else None
     if player is not None and (not isinstance(player, str) or not player.strip() or len(player) > 40 or any(ord(char) < 32 for char in player)):
         raise TvingInputError("선수 코드가 올바르지 않습니다.")
-    if date: _validate_identity(TvingSnapshot.DAILY, date)
-    if month: _validate_identity(TvingSnapshot.MONTH, month)
+    if date: _validate_identity(ProviderSnapshot.DAILY, date)
+    if month: _validate_identity(ProviderSnapshot.MONTH, month)
     if kind == "game":
         query = Game.objects.filter(source="tving").select_related("home_team", "away_team").order_by("game_date", "game_time", "pk")
         if mapped_team: query = query.filter(Q(home_team=mapped_team) | Q(away_team=mapped_team))
@@ -424,26 +475,26 @@ def search_entities(*, kind, team=None, player=None, date=None, month=None, page
         if month: query = query.filter(snapshot_date__year=int(month[:4]), snapshot_date__month=int(month[5:]))
         serializer = lambda row: {"id": row.pk, "teamCode": row.team.team_code, "date": row.snapshot_date, "rank": row.rank, "wins": row.wins, "draws": row.draws, "losses": row.losses, "lastSyncedAt": row.last_synced_at}
     elif kind == "team":
-        query = TvingTeamProfile.objects.select_related("team").order_by("external_code")
+        query = TeamProfile.objects.select_related("team").order_by("external_code")
         if mapped_team: query = query.filter(team=mapped_team)
         serializer = lambda row: {"id": row.pk, "teamCode": row.external_code, "name": row.team.team_name_ko, "seasonTitle": row.season_title, "lastSyncedAt": row.last_synced_at}
     elif kind == "player":
-        query = TvingPlayer.objects.select_related("team").order_by("external_code")
+        query = Player.objects.select_related("team").order_by("external_code")
         if mapped_team: query = query.filter(team=mapped_team)
         if player: query = query.filter(external_code=player)
         serializer = player_entity
     elif kind == "roster":
-        query = TvingTeamRoster.objects.select_related("team", "player").order_by("team_id", "position", "player_id")
+        query = TeamRoster.objects.select_related("team", "player").order_by("team_id", "position", "player_id")
         if mapped_team: query = query.filter(team=mapped_team)
         if player: query = query.filter(player_id=player)
         serializer = lambda row: {"id": row.pk, "teamCode": row.team.team_code, "playerCode": row.player_id, "position": row.position, "lastSyncedAt": row.last_synced_at}
     elif kind == "player-season":
-        query = TvingPlayerSeasonRecord.objects.select_related("player__team").order_by("-season", "record_kind", "rank", "player_id")
+        query = PlayerSeasonRecord.objects.select_related("player__team").order_by("-season", "record_kind", "rank", "player_id")
         if mapped_team: query = query.filter(player__team=mapped_team)
         if player: query = query.filter(player_id=player)
         serializer = lambda row: {"id": row.pk, "playerCode": row.player_id, "season": row.season, "kind": row.record_kind, "rank": row.rank, "metrics": row.metrics, "lastSyncedAt": row.last_synced_at}
     else:
-        query = TvingTeamTopPlayer.objects.select_related("team", "player").order_by("team_id", "athlete_type", "category", "rank")
+        query = TeamTopPlayer.objects.select_related("team", "player").order_by("team_id", "athlete_type", "category", "rank")
         if mapped_team: query = query.filter(team=mapped_team)
         if player: query = query.filter(player_id=player)
         serializer = lambda row: {"id": row.pk, "teamCode": row.team.team_code, "playerCode": row.player_id, "athleteType": row.athlete_type, "category": row.category, "rank": row.rank, "lastSyncedAt": row.last_synced_at}
@@ -453,11 +504,11 @@ def search_entities(*, kind, team=None, player=None, date=None, month=None, page
 
 def create_player(*, external_code, team_code, name, actor):
     _require_actor(actor)
-    _validate_identity(TvingSnapshot.ATHLETE, external_code)
+    _validate_identity(ProviderSnapshot.ATHLETE, external_code)
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
         raise TvingInputError("선수 이름이 올바르지 않습니다.")
     try:
-        return TvingPlayer.objects.create(external_code=external_code, team=team_for(team_code.upper()), name=name.strip())
+        return Player.objects.create(external_code=external_code, team=team_for(team_code.upper()), name=name.strip())
     except IntegrityError:
         raise TvingInputError("이미 존재하는 선수 코드입니다.") from None
 
@@ -467,7 +518,7 @@ def update_player(player, *, team_code, name, actor):
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
         raise TvingInputError("선수 이름이 올바르지 않습니다.")
     with transaction.atomic():
-        locked = TvingPlayer.objects.select_for_update().get(pk=player.pk)
+        locked = Player.objects.select_for_update().get(pk=player.pk)
         locked.team, locked.name = team_for(team_code.upper()), name.strip()
         locked.save(update_fields=("team", "name", "updated_at"))
     return locked

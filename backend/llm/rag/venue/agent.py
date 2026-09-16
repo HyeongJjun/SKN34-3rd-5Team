@@ -26,6 +26,7 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
 from ..club.retrieval import embed                # 질문 임베딩만 재사용 (같은 임베딩 모델)
+from ..domain_tools import tools_for
 from ..persona import FIXED
 from .prompts import NO_DOCUMENTS_MESSAGE, QUERY_TRANSFORM, SYSTEM
 
@@ -254,7 +255,7 @@ def search_documents_tool(query: str) -> str:
 def agent():
     global _agent
     if _agent is None:
-        _agent = create_agent(model=llm(), tools=[search_documents_tool], system_prompt=SYSTEM)
+        _agent = create_agent(model=llm(), tools=[search_documents_tool, *tools_for("venue")], system_prompt=SYSTEM)
     return _agent
 
 
@@ -292,7 +293,7 @@ def answer(question, history=None, hint_stadium=None):
         messages = [*[{"role": m["role"], "content": m["content"]} for m in history[-6:]],
                     {"role": "user", "content": question}]
         t0 = time.perf_counter()
-        result = agent().invoke({"messages": messages})
+        result = agent().invoke({"messages": messages}, config={"recursion_limit": 6})
         timing["agent_ms"] = round((time.perf_counter() - t0) * 1000)
     finally:
         _ctx.reset(token)

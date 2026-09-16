@@ -7,16 +7,18 @@ from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from django.db import DatabaseError
-from django.test import TestCase
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.runnables import RunnableLambda
 
 from baseball import models as baseball
-from community.models import CommunityPost, PredictionGame
+from community.models import CommunityDraft, CommunityPost, GamePrediction, PredictionGame
 from travel.models import Course, CourseStop
 
 from .chat_service import ChatService
+from .rag import domain_tools
 from .tools import DOMAIN_TOOL_NAMES, create_default_tools, create_domain_tools
 
 
@@ -25,6 +27,7 @@ EXPECTED_NAMES = (
     "get_ticket_prices", "get_ticket_policies", "get_transport", "get_food_stores",
     "get_facilities", "get_stadium_contents", "get_seat_maps", "search_places",
     "search_courses", "get_course", "search_community_posts", "get_prediction_games",
+    "search_players", "get_directions", "search_tourism", "get_weather",
 )
 
 
@@ -67,7 +70,12 @@ class DomainToolsTest(TestCase):
         cls.course = Course.objects.create(id=uuid4(), route_number="900001", title="잠실 맛집 코스", stadium="잠실", description="경기 전", content="외부 문자열", duration="3시간", tags=["맛집"], author="공개 작성자", edit_token_hash="secret-hash")
         CourseStop.objects.create(course=cls.course, position=0, name="식당", lat=37.5, lng=127.0, category="식당", visit_id="private-provider-token")
         CommunityPost.objects.create(source_id="post-1", post_number="900001", board="teams", team_code="LG", owner=None, idempotency_key="private-key", author="작성자", title="잠실 질문", content="외부 문자열", category="질문")
-        PredictionGame.objects.create(source_id="prediction-1", game_date=date(2026, 9, 15), starts_at=now, stadium="잠실", away_team_code="OB", away_team_name="두산", home_team_code="LG", home_team_name="LG", status="scheduled", source_fetched_at=now)
+        cls.prediction = PredictionGame.objects.create(source_id="prediction-1", game_date=date(2026, 9, 15), starts_at=now, stadium="잠실", away_team_code="OB", away_team_name="두산", home_team_code="LG", home_team_name="LG", status="scheduled", source_fetched_at=now)
+        cls.voter_home = get_user_model().objects.create_user(username="domain-home")
+        cls.voter_away = get_user_model().objects.create_user(username="domain-away")
+        GamePrediction.objects.create(user=cls.voter_home, game=cls.prediction, choice="home")
+        GamePrediction.objects.create(user=cls.voter_away, game=cls.prediction, choice="away")
+        CommunityDraft.objects.create(owner=cls.voter_home, board="free", title="비공개 작성 중", content="draft-secret", category="질문")
 
     def setUp(self):
         self.tools = {tool.name: tool for tool in create_domain_tools()}
@@ -76,7 +84,7 @@ class DomainToolsTest(TestCase):
         self.assertEqual(DOMAIN_TOOL_NAMES, EXPECTED_NAMES)
         self.assertEqual(tuple(self.tools), EXPECTED_NAMES)
         default_names = tuple(tool.name for tool in create_default_tools())
-        self.assertEqual(default_names[:17], EXPECTED_NAMES)
+        self.assertEqual(default_names[:len(EXPECTED_NAMES)], EXPECTED_NAMES)
         self.assertEqual(default_names[-2:], ("get_baseball_schema", "execute_baseball_select"))
         model = RunnableLambda(lambda _: AIMessage(content="테스트"))
         self.assertEqual(tuple(tool.name for tool in ChatService(llm=model).tools), default_names)
@@ -108,6 +116,11 @@ class DomainToolsTest(TestCase):
         self.assertNotIn("edit_token_hash", results["get_course"]["item"])
         self.assertNotIn("owner", results["search_community_posts"]["items"][0])
         self.assertNotIn("votes", results["get_prediction_games"]["items"][0])
+        self.assertEqual(results["get_prediction_games"]["items"][0]["fan_votes"], {
+            "home": 1, "away": 1, "total": 2, "homePercent": 50, "awayPercent": 50,
+        })
+        self.assertIn("실제 승리 확률", results["get_prediction_games"]["items"][0]["fan_vote_notice"])
+        self.assertNotIn("draft-secret", json.dumps(results["search_community_posts"], ensure_ascii=False))
         self.assertNotIn("locked_at", results["get_prediction_games"]["items"][0])
         for name, result in results.items():
             with self.subTest(tool=name):
@@ -115,9 +128,27 @@ class DomainToolsTest(TestCase):
                 self.assertNotIn("secret-hash", json.dumps(result, ensure_ascii=False))
                 self.assertNotIn("private-provider-token", json.dumps(result, ensure_ascii=False))
 
+    def test_followup_tools_are_callable_through_domain_allowlists(self):
+        calls = (
+            ("venue", "get_stadium", {"stadium_id": self.stadium.pk}),
+            ("venue", "get_stadium_contents", {"stadium_id": self.stadium.pk}),
+            ("course", "get_stadium", {"stadium_id": self.stadium.pk}),
+            ("course", "get_stadium_contents", {"stadium_id": self.stadium.pk}),
+            ("course", "search_courses", {"query": "맛집"}),
+            ("course", "get_course", {"course_id": str(self.course.pk)}),
+            ("club", "search_community_posts", {"query": "잠실"}),
+            ("club", "get_prediction_games", {"game_date": "2026-09-15"}),
+        )
+        results = {(domain, name): domain_tools.invoke(domain, name, arguments) for domain, name, arguments in calls}
+        self.assertEqual(results[("venue", "get_stadium")]["item"]["stadium_code"], "TEST-JAMSIL")
+        self.assertEqual(results[("course", "search_courses")]["items"][0]["id"], str(self.course.pk))
+        self.assertIn("900001", [item["post_number"] for item in results[("club", "search_community_posts")]["items"]])
+        self.assertEqual(results[("club", "get_prediction_games")]["items"][0]["fan_votes"]["total"], 2)
+
     def test_exact_date_empty_context_isolation_and_bad_input(self):
         exact = self.tools["get_standings"].invoke({"snapshot_date": "2098-09-13"})
-        self.assertEqual(exact, {"requested_date": "2098-09-13", "actual_date": None, "count": 0, "items": []})
+        self.assertEqual({key: exact[key] for key in ("requested_date", "actual_date", "count", "items")}, {"requested_date": "2098-09-13", "actual_date": None, "count": 0, "items": []})
+        self.assertTrue(exact["stale"])
         self.assertEqual(self.tools["get_standings"].invoke({})["actual_date"], "2099-09-15")
         ob = self.tools["get_seat_zones"].invoke({"season": 2099, "team_code": "OB", "stadium_id": 990001})
         self.assertEqual([item["zone_code"] for item in ob["items"]], ["OB-Z"])
@@ -135,6 +166,34 @@ class DomainToolsTest(TestCase):
             result = self.tools["get_stadium"].invoke({"stadium_id": 1})
         self.assertEqual(result, "저장된 정보를 조회하지 못했습니다. 잠시 후 다시 시도해 주세요.")
         self.assertNotIn("private", result)
+
+    def test_baseball_tools_refresh_through_common_service_before_filtered_query(self):
+        game_day = date(2026, 9, 16)
+        game_id = 990099
+
+        def sync_games(start_date, end_date):
+            self.assertEqual((start_date, end_date), (game_day, game_day))
+            baseball.Game.objects.update_or_create(
+                id=game_id,
+                defaults={"game_code": "SYNCED-G1", "home_team": self.lg, "away_team": self.ob, "stadium": self.stadium, "game_date": game_day, "game_time": time(18, 30), "status_code": "scheduled", "game_type": "regular", "collected_at": timezone.now()},
+            )
+            return {"stale": False, "warning": None}
+
+        def sync_standings(snapshot_date):
+            baseball.StandingHistory.objects.update_or_create(
+                team=self.ob, snapshot_date=game_day,
+                defaults={"id": 990099, "rank": 1, "wins": 80, "losses": 40, "draws": 2, "games_behind": "0", "collected_at": timezone.now()},
+            )
+            return {"stale": False, "warning": None}
+
+        with patch("llm.tools.domain.tving_service.ensure_game_range_fresh", side_effect=sync_games) as games_sync, patch("llm.tools.domain.tving_service.ensure_standings_fresh", side_effect=sync_standings) as standings_sync:
+            games = self.tools["get_games"].invoke({"start_date": game_day.isoformat(), "end_date": game_day.isoformat(), "team_code": "LG"})
+            standings = self.tools["get_standings"].invoke({"snapshot_date": game_day.isoformat()})
+        games_sync.assert_called_once_with(game_day, game_day)
+        standings_sync.assert_called_once_with(game_day)
+        self.assertIn("SYNCED-G1", [item["game_code"] for item in games["items"]])
+        self.assertTrue(all(item["game_date"] == game_day.isoformat() for item in games["items"]))
+        self.assertEqual(standings["items"][0]["team__team_code"], "OB")
 
 
 class PlaceAdapterTest(TestCase):
@@ -175,6 +234,43 @@ class PlaceAdapterTest(TestCase):
         module.search_and_sync_places = lambda _: (_ for _ in ()).throw(error("private detail"))
         with patch.dict(sys.modules, {"travel.place_service": module}):
             self.assertEqual(create_domain_tools()[12].invoke(self.args), "안전한 장소 오류")
+
+
+class ExternalDomainToolAdapterTest(SimpleTestCase):
+    def setUp(self):
+        self.tools = {tool.name: tool for tool in create_domain_tools()}
+
+    def test_player_lookup_uses_tving_refresh_then_relational_read(self):
+        refreshed = {"stale": False, "warning": None}
+        rows = [{"externalCode": "p1", "teamCode": "LG", "name": "홍길동"}]
+        with (
+            patch("llm.tools.domain.tving_service.refresh_team", return_value=refreshed) as refresh,
+            patch("llm.tools.domain.tving_service.search_entities", return_value=(rows, 1)) as search,
+        ):
+            result = self.tools["search_players"].invoke({"team_code": "LG", "name": "홍길동"})
+        refresh.assert_called_once_with("LG")
+        search.assert_called_once_with(kind="player", team="LG", player=None, page_size=100)
+        self.assertEqual(result["items"], rows)
+
+    def test_travel_tools_delegate_to_existing_services(self):
+        directions = {"mode": "walk", "legs": [], "distance": 0, "seconds": 0}
+        tourism = {"status": "ok", "places": [], "truncated": False}
+        weather = {"label": "맑음", "temperature": 22}
+        with patch("travel.directions_provider.fetch_directions", return_value=directions) as fetch:
+            self.assertEqual(self.tools["get_directions"].invoke({
+                "mode": "walk", "points": [{"lat": 37.5, "lng": 127.0}, {"lat": 37.6, "lng": 127.1}],
+            }), directions)
+        fetch.assert_called_once()
+        with patch("travel.tourism_service.search_tourism", return_value=tourism) as search:
+            self.assertEqual(self.tools["search_tourism"].invoke({
+                "stadium_code": "JAMSIL", "latitude": 37.5161987797456, "longitude": 127.075940589715,
+            }), tourism)
+        search.assert_called_once_with({"stadium": "JAMSIL", "lat": 37.5161987797456, "lng": 127.075940589715})
+        with patch("travel.weather_service.get_stadium_weather", return_value=weather) as get_weather:
+            self.assertEqual(self.tools["get_weather"].invoke({
+                "stadium_code": "JAMSIL", "game_date": "2026-09-16", "game_time": "18:30",
+            }), weather)
+        get_weather.assert_called_once_with("JAMSIL", "2026-09-16", "18:30")
 
 
 class ChatDomainRoutingTest(TestCase):

@@ -3,7 +3,7 @@
 기본 채팅 경로에서 사용한다. ``CHAT_USE_RAG=1``이면 기존 RAG 경로가 먼저
 응답하므로 이 도구 루프를 거치지 않는다는 기존 opt-in 동작은 의도적으로 유지한다.
 저장된 코스/커뮤니티/외부 제공자 문자열은 명령이 아닌 신뢰하지 않는 데이터다.
-``search_places``만 별도 장소 서비스에 위임하며 그 서비스가 최신 결과를 동기화한다.
+외부 조회는 travel/tving의 기존 공개 서비스에만 위임하며 여기서 제공자 호출을 재구현하지 않는다.
 """
 
 import math
@@ -39,6 +39,7 @@ from community.models import (
     PredictionGame,
 )
 from travel.models import Course
+from tving import service as tving_service
 
 
 INVALID_INPUT = "도구 입력 형식이 올바르지 않습니다. 인자 설명을 확인하세요."
@@ -232,6 +233,44 @@ class PredictionInput(LimitInput):
         return self
 
 
+class PlayerInput(LimitInput):
+    team_code: str | None = Field(default=None, pattern="^(SS|KT|LG|HT|OB|NC|HH|LT|SK|WO)$")
+    player_code: str | None = Field(default=None, min_length=1, max_length=40)
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+
+    @model_validator(mode="after")
+    def any_filter(self):
+        if not any((self.team_code, self.player_code, self.name)):
+            raise ValueError("구단, 선수 코드, 이름 중 하나가 필요합니다.")
+        return self
+
+
+class DirectionsInput(ToolInput):
+    mode: str = Field(pattern="^(car|walk|transit)$")
+    points: list[dict[str, StrictFloat]] = Field(min_length=2, max_length=13)
+
+    @model_validator(mode="after")
+    def validate_points(self):
+        for point in self.points:
+            if set(point) != {"lat", "lng"} or not math.isfinite(point["lat"]) or not math.isfinite(point["lng"]):
+                raise ValueError("각 지점에는 유한한 lat, lng만 있어야 합니다.")
+            if abs(point["lat"]) > 90 or abs(point["lng"]) > 180:
+                raise ValueError("좌표 범위를 확인하세요.")
+        return self
+
+
+class TourismInput(ToolInput):
+    stadium_code: str = Field(pattern="^(JAMSIL|GOCHEOK|MUNHAK|SUWON|DAEJEON|DAEGU|GWANGJU|SAJIK|CHANGWON)$")
+    latitude: StrictFloat = Field(ge=-90, le=90)
+    longitude: StrictFloat = Field(ge=-180, le=180)
+
+
+class WeatherInput(ToolInput):
+    stadium_code: str = Field(pattern="^(JAMSIL|GOCHEOK|MUNHAK|SUWON|DAEJEON|DAEGU|GWANGJU|SAJIK|CHANGWON)$")
+    game_date: date
+    game_time: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+
+
 def _context(season, team_code, stadium_id=None):
     query = HomeContext.objects.filter(season=season, team__team_code=team_code)
     return query.filter(stadium_id=stadium_id) if stadium_id is not None else query
@@ -256,19 +295,21 @@ def _course_item(course, include_stops=False):
 
 
 def create_domain_tools():
-    """요청된 17개 typed 조회 도구를 고정 순서로 만든다."""
+    """도메인 에이전트와 기본 채팅이 공유하는 typed 조회 도구를 만든다."""
 
     def get_standings(snapshot_date=None, limit=20):
         """정확한 날짜 또는 저장된 최신 날짜의 KBO 순위를 조회한다."""
+        freshness = tving_service.ensure_standings_fresh(snapshot_date)
         actual = snapshot_date or StandingHistory.objects.order_by("-snapshot_date").values_list("snapshot_date", flat=True).first()
         rows = [] if actual is None else _rows(
             StandingHistory.objects.filter(snapshot_date=actual).order_by("rank", "team__team_code"),
             ("team__team_code", "team__team_name_ko", "snapshot_date", "rank", "wins", "losses", "draws", "games_behind"), limit,
         )
-        return _result(rows, requested_date=_json(snapshot_date), actual_date=_json(actual) if rows else None)
+        return _result(rows, requested_date=_json(snapshot_date), actual_date=_json(actual) if rows else None, **freshness)
 
     def get_games(start_date, end_date, team_code=None, stadium_id=None, limit=20):
         """날짜 범위의 일정과 결과를 팀/구장으로 필터링한다."""
+        freshness = tving_service.ensure_game_range_fresh(start_date, end_date)
         query = Game.objects.filter(game_date__range=(start_date, end_date))
         if team_code:
             query = query.filter(Q(home_team__team_code=team_code) | Q(away_team__team_code=team_code))
@@ -278,7 +319,7 @@ def create_domain_tools():
             "id", "game_code", "game_date", "game_time", "home_team__team_code", "home_team__team_name_ko",
             "away_team__team_code", "away_team__team_name_ko", "stadium_id", "stadium__stadium_name_ko",
             "home_score", "away_score", "status_code", "game_type",
-        ), limit))
+        ), limit), **freshness)
 
     def get_stadium(stadium_id=None, stadium_code=None):
         """ID 또는 코드로 공개 구장 정보를 조회한다."""
@@ -397,7 +438,9 @@ def create_domain_tools():
         return _result(_rows(posts.order_by("-created_at", "post_number"), ("post_number", "board", "team_code", "author", "title", "content", "category", "created_at", "views", "recommendations", "comment_count", "is_sample"), limit))
 
     def get_prediction_games(game_date, team_code=None, status=None, limit=20):
-        """저장된 승부예측 대상 경기를 날짜·팀·상태로 조회한다(개인 투표 제외)."""
+        """저장된 승부예측 대상 경기와 익명 팬 투표 집계를 조회한다(개인 선택 제외)."""
+        from community.predictions import _counts
+
         games = PredictionGame.objects.filter(game_date=game_date)
         if team_code:
             games = games.filter(Q(home_team_code=team_code) | Q(away_team_code=team_code))
@@ -411,8 +454,67 @@ def create_domain_tools():
             "status": game.status, "result": game.result or None,
             "locked": game.locked_at is not None, "voided": game.voided_at is not None,
             "source_fetched_at": _json(game.source_fetched_at),
+            "fan_votes": _counts(game),
+            "fan_vote_notice": "이용자 팬 투표 집계이며 실제 승리 확률이나 경기 결과 예측이 아닙니다.",
         } for game in games.order_by("starts_at", "source_id")[:limit]]
         return _result(items)
+
+    def search_players(team_code=None, player_code=None, name=None, limit=20):
+        """TVING 공통 DB-first 경로로 선수 명단/상세를 갱신한 뒤 공개 선수 정보를 찾는다."""
+        stale, warning = False, None
+        try:
+            teams = [team_code] if team_code else []
+            if name and not teams:
+                saved, _ = tving_service.search_entities(kind="player", page_size=100)
+                needle = name.casefold()
+                teams = sorted({row["teamCode"] for row in saved if needle in row["name"].casefold()})
+            for code in teams:
+                refreshed = tving_service.refresh_team(code)
+                stale, warning = stale or refreshed["stale"], warning or refreshed["warning"]
+            if player_code:
+                refreshed = tving_service.refresh_athlete(player_code)
+                stale, warning = stale or refreshed["stale"], warning or refreshed["warning"]
+        except tving_service.TvingError:
+            stale, warning = True, "최신 선수 정보를 확인하지 못해 저장된 자료만 조회합니다."
+        rows, _ = tving_service.search_entities(kind="player", team=team_code, player=player_code, page_size=100)
+        if name:
+            needle = name.casefold()
+            rows = [row for row in rows if needle in row["name"].casefold()]
+        return _result(rows[:limit], stale=stale, warning=warning)
+
+    def get_directions(mode, points):
+        """기존 공개 길찾기 서비스로 선택 지점 사이 경로를 조회한다."""
+        from travel.directions_provider import DirectionsError, fetch_directions
+        try:
+            return fetch_directions(mode, points)
+        except DirectionsError as error:
+            message = "길찾기 요청이 많아요. 잠시 후 다시 시도해 주세요." if error.status == 429 else "길찾기 정보를 불러오지 못했습니다."
+            raise ToolException(message) from None
+
+    def search_tourism(stadium_code, latitude, longitude):
+        """기존 한국관광공사 연동 서비스로 구장 주변 관광지를 조회한다."""
+        from rest_framework.exceptions import ValidationError
+        from travel.tourism_provider import TourismProviderError
+        from travel.tourism_service import search_tourism as service
+        try:
+            return service({"stadium": stadium_code, "lat": latitude, "lng": longitude})
+        except ValidationError:
+            raise ToolException("관광지 검색 위치를 확인해 주세요.") from None
+        except TourismProviderError:
+            raise ToolException("관광지 정보를 불러오지 못했습니다.") from None
+
+    def get_weather(stadium_code, game_date, game_time):
+        """기존 기상청 서비스로 구장 경기 시각의 단기예보를 조회한다."""
+        from travel.weather_service import WeatherError, get_stadium_weather
+        try:
+            return get_stadium_weather(stadium_code, game_date.isoformat(), game_time)
+        except WeatherError as error:
+            messages = {
+                "invalid_request": "예보 날짜와 구장을 확인해 주세요.",
+                "weather_not_configured": "날씨 데이터 연결 설정이 필요합니다.",
+                "weather_busy": "날씨 요청이 많아요. 잠시 후 다시 시도해 주세요.",
+            }
+            raise ToolException(messages.get(error.code, "날씨 정보를 불러오지 못했습니다.")) from None
 
     specs = (
         (get_standings, "get_standings", "정확한 날짜 또는 최신 저장 스냅샷의 순위와 실제 날짜를 반환한다.", StandingsInput),
@@ -431,6 +533,10 @@ def create_domain_tools():
         (search_courses, "search_courses", "공개 코스를 검색한다.", CourseSearchInput),
         (get_course, "get_course", "UUID로 공개 코스 상세를 조회한다.", CourseInput),
         (search_community_posts, "search_community_posts", "공개 커뮤니티 글을 검색한다.", CommunitySearchInput),
-        (get_prediction_games, "get_prediction_games", "저장된 승부예측 경기를 조회한다.", PredictionInput),
+        (get_prediction_games, "get_prediction_games", "승부예측 대상 경기와 실제 확률이 아닌 익명 팬 투표 집계를 조회한다.", PredictionInput),
+        (search_players, "search_players", "TVING DB-first 최신성 경로로 구단/코드/이름에 맞는 선수를 조회한다.", PlayerInput),
+        (get_directions, "get_directions", "기존 길찾기 서비스로 2~13개 지점의 경로를 조회한다.", DirectionsInput),
+        (search_tourism, "search_tourism", "한국관광공사 연동 서비스로 구장 주변 관광지를 조회한다.", TourismInput),
+        (get_weather, "get_weather", "기상청 연동 서비스로 구장 경기 시각의 날씨를 조회한다.", WeatherInput),
     )
     return tuple(_tool(*spec) for spec in specs)
