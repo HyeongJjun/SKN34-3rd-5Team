@@ -469,8 +469,8 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 ## 9. 데이터베이스 설계
 
-<p align="center"><img src="./docs/images/erd.svg" width="90%" alt="데이터베이스 ERD"/></p>
-<p align="center"><sub>🔍 그림을 누르면 원본 크기로 볼 수 있어요</sub></p>
+<p align="center"><a href="https://raw.githubusercontent.com/SKNETWORKS-FAMILY-AICAMP/SKN34-3rd-5Team/develop/docs/images/erd.svg"><img src="./docs/images/erd.svg" width="90%" alt="데이터베이스 ERD"/></a></p>
+<p align="center"><sub>🔍 <b>그림을 누르면 크게 볼 수 있어요</b> (Ctrl + 휠로 더 확대)</sub></p>
 
 
 | 영역 | 주요 테이블 |
