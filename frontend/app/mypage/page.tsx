@@ -6,7 +6,7 @@ import { ProfilePhotoEditor } from "@/components/profile-photo-editor";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useMemberAuth, type MemberUser } from "@/lib/member-auth";
-import { retryRoutes, useRoutes, useLikedRoutes, useRoutesError, useRoutesReady } from "@/lib/routes";
+import { deleteRoute, retryRoutes, toggleRouteLike, useRoutes, useLikedRoutes, useRoutesError, useRoutesReady, type TripRoute } from "@/lib/routes";
 import { teamBoards } from "@/lib/team-community";
 import { memberRoleLabel, nextNicknameChangeAt } from "@/lib/member-policy";
 import { updateMemberUser, type MemberUserUpdate } from "@/lib/api/auth";
@@ -55,15 +55,33 @@ function MyPageContent() {
   const { status, user, setUser } = useMemberAuth();
   const router = useRouter(), search = useSearchParams();
   const selected = search.get("tab");
-  // 관리자 계정(운영·마스터)은 "회원 정보" 자리에 회원·게시글·신고 관리 탭을 쓴다
+  // 관리자 계정(운영·마스터)은 회원·게시글·신고 관리 탭이 더해지고, 회원 정보 탭은 맨 끝에 둔다
   const isAdmin = Boolean(user?.is_staff || user?.is_superuser);
-  const tabValues: string[] = ["likes", "posts", ...(isAdmin ? adminTabs.map(([value]) => value) : ["profile"])];
+  const tabValues: string[] = ["likes", "posts", ...(isAdmin ? adminTabs.map(([value]) => value) : []), "profile"];
   const tab = selected && tabValues.includes(selected) ? selected : "courses";
   const ready = useRoutesReady();
   const routes = useRoutes();
   const loadError = useRoutesError();
   const likes = useLikedRoutes();
   const [message, setMessage] = useState("");
+  // 내 코스 삭제 · 찜한 코스 해제
+  const [removing, setRemoving] = useState("");
+  const [courseNotice, setCourseNotice] = useState("");
+  async function removeCourse(route: TripRoute, liked: boolean) {
+    if (removing) return;
+    const question = liked
+      ? `"${route.title}" 코스를 찜한 코스에서 삭제하시겠어요?`
+      : `"${route.title}" 코스를 삭제하시겠어요?\n삭제하면 되돌릴 수 없어요.`;
+    if (!window.confirm(question)) return;
+    setRemoving(route.id); setCourseNotice("");
+    try {
+      if (liked) await toggleRouteLike(route.id);
+      else await deleteRoute(route.id);
+      setCourseNotice(liked ? "찜한 코스에서 삭제했어요." : "코스를 삭제했어요.");
+    } catch (cause) {
+      setCourseNotice(cause instanceof Error ? cause.message : "코스를 삭제하지 못했어요.");
+    } finally { setRemoving(""); }
+  }
   const [saving, setSaving] = useState(false);
   const saveRequest = useRef<AbortController | null>(null);
   const [loadedAt] = useState(() => Date.now());
@@ -85,7 +103,7 @@ function MyPageContent() {
     <p className={styles.note}>계정·프로필 설정은 서버에 저장돼요. 새 코스는 공개되며 편집 권한만 이 브라우저에 저장돼요. 이전 버전 코스는 다시 저장하기 전까지 이 브라우저에만 남아요.</p>
     {loadError && <p className={styles.note} role="alert">{loadError} 이전 버전 코스만 표시될 수 있어요. <button type="button" onClick={() => void retryRoutes()}>다시 불러오기</button></p>}
     <nav className={styles.tabs} aria-label="마이페이지 메뉴">
-      {[["courses",`내 코스 (${own.length})`],["likes",`찜한 코스 (${liked.length})`],["posts","내가 쓴 글"], ...(isAdmin ? adminTabs : [["profile","회원 정보"]])].map(([value, label]) => <button key={value} type="button" aria-pressed={tab === value} onClick={() => router.push(`/mypage?tab=${value}`, { scroll: false })}>{label}</button>)}
+      {[["courses",`내 코스 (${own.length})`],["likes",`찜한 코스 (${liked.length})`],["posts","내가 쓴 글"], ...(isAdmin ? adminTabs : []), ["profile","회원 정보"]].map(([value, label]) => <button key={value} type="button" aria-pressed={tab === value} onClick={() => router.push(`/mypage?tab=${value}`, { scroll: false })}>{label}</button>)}
     </nav>
     {tab === "posts" ? <MemberPosts /> : tab === "members" ? <AdminMembersPanel /> : tab === "manage-posts" ? <AdminPostsPanel /> : tab === "reports" ? <AdminReportsPanel /> : tab === "profile" ? <section className={styles.settings}><h2>회원정보 수정</h2>
       <ProfilePhotoEditor avatar={user.avatar} onSaved={async avatar => { const updated = await patchUser({ avatar }); setUser(updated, user.id); }} />
@@ -106,7 +124,7 @@ function MyPageContent() {
         <button className="button button-primary" type="submit" disabled={saving}>{saving ? "저장 중…" : "변경사항 저장"}</button>{message && <p role="status">{message}</p>}
       </form>
     </section> : <section aria-label={tab === "likes" ? "찜한 코스" : "내 코스"}>
-      {visible.length ? <div className={styles.grid}>{visible.map(route => <div key={route.id}><RouteCard route={route} />{tab === "courses" && <div className={styles.actions}><Link href={`/routes/new?edit=${encodeURIComponent(route.id)}`}>수정하기</Link><Link href={`/routes/${encodeURIComponent(route.id)}`}>상세 보기</Link></div>}</div>)}</div> : <div className={styles.empty}><h2>{tab === "likes" ? "아직 찜한 코스가 없어요" : "아직 저장한 코스가 없어요"}</h2><p>{tab === "likes" ? "마음에 드는 코스에 좋아요를 눌러보세요." : "지도에서 장소를 골라 첫 코스를 만들어보세요."}</p><Link className="button button-primary" href={tab === "likes" ? "/routes" : "/routes/new"}>{tab === "likes" ? "코스 둘러보기" : "코스 만들기"}</Link></div>}
+      {courseNotice && <p role="status" className={styles.note}>{courseNotice}</p>}{visible.length ? <div className={styles.grid}>{visible.map(route => <div key={route.id}><RouteCard route={route} /><div className={styles.actions}><button type="button" className={styles.deleteAction} disabled={Boolean(removing)} onClick={() => void removeCourse(route, tab === "likes")}>{removing === route.id ? "삭제 중…" : "삭제하기"}</button><Link href={`/routes/${encodeURIComponent(route.id)}`}>상세 보기</Link></div></div>)}</div> : <div className={styles.empty}><h2>{tab === "likes" ? "아직 찜한 코스가 없어요" : "아직 저장한 코스가 없어요"}</h2><p>{tab === "likes" ? "마음에 드는 코스에 좋아요를 눌러보세요." : "지도에서 장소를 골라 첫 코스를 만들어보세요."}</p><Link className="button button-primary" href={tab === "likes" ? "/routes" : "/routes/new"}>{tab === "likes" ? "코스 둘러보기" : "코스 만들기"}</Link></div>}
     </section>}
     {isAdmin && <AdminLogout />}
   </main>;
