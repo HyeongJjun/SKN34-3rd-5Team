@@ -5095,15 +5095,15 @@
         <text data-detail="context" x="735" y="146" class="t-muted" font-size="9" text-anchor="middle">ChatService · SSE</text>
         </g>
 
-        <g id="node-pipeline" data-node-id="pipeline" data-node-label="RAG 파이프라인" tabindex="0" role="button" aria-label="Focus RAG 파이프라인, retrieve → agent → parse, Docker Compose (EC2)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="retrieve → agent → parse" data-node-tag="LangChain" data-node-context="Docker Compose (EC2)">
-          <title>RAG 파이프라인 · retrieve → agent → parse · Docker Compose (EC2) · LangChain</title>
+        <g id="node-pipeline" data-node-id="pipeline" data-node-label="RAG 파이프라인" tabindex="0" role="button" aria-label="Focus RAG 파이프라인, 검색 → 도구 계획 → 스트리밍, Docker Compose (EC2)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="검색 → 도구 계획 → 스트리밍" data-node-tag="LangChain" data-node-context="Docker Compose (EC2)">
+          <title>RAG 파이프라인 · 검색 → 도구 계획 → 스트리밍 · Docker Compose (EC2) · LangChain</title>
           <rect x="870" y="100" width="170" height="64" rx="6" class="c-mask"/>
           <rect x="870" y="100" width="170" height="64" rx="6" class="c-backend" data-animate="node" style="--step:4" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(876 106) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="955" y="130" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">RAG 파이프라인</text>
-        <text data-detail="context" x="955" y="146" class="t-muted" font-size="9" text-anchor="middle">retrieve → agent → parse</text>
+        <text data-detail="context" x="955" y="146" class="t-muted" font-size="9" text-anchor="middle">검색 → 도구 계획 → 스트리밍</text>
         <text data-detail="fine" x="955" y="156" class="t-backend" font-size="7" text-anchor="middle">LangChain</text>
         </g>
 
@@ -5443,8 +5443,8 @@
           <h3>서빙 경로 (요청마다)</h3>
         </div>
         <ul>
-          <li>&bull; 질문 → 검색(Retrieve) → 에이전트 생성(Generate)</li>
-          <li>&bull; 검색 중앙값 9ms, LLM 생성 중앙값 2.6s</li>
+          <li>&bull; 질문 → 검색 → 도구 계획(LLM) → 답변 토큰 스트리밍(SSE)</li>
+          <li>&bull; 검색 중앙값 9ms · 응답 시간 대부분은 LLM</li>
         </ul>
       </div>
 
