@@ -220,6 +220,18 @@ class DispatcherTest(unittest.TestCase):
             self.assertEqual(dispatcher.answer("오늘 주식 뭐 사?")["route"], "dispatcher:scope")
         a.assert_not_called()
 
+    def test_hard_off_topic_is_blocked_even_with_baseball_words(self):
+        """야구 단어를 섞어도 코딩·자동차 구매 같은 무관 주제는 에이전트로 새지 않는다 (2026-09-16 회귀)."""
+        from .. import dispatcher
+        with mock.patch.object(dispatcher.assistant, "answer") as a:
+            for q in ("야구 좋아하는데 파이썬 코딩 알려줘", "야구장 갈 때 탈 자동차 추천해줘 아반떼 어때",
+                      "LG 팬인데 코딩 공부법 알려줘", "잠실 직관 가는데 주식 뭐 살까"):
+                self.assertEqual(dispatcher.answer(q)["route"], "dispatcher:scope", q)
+        a.assert_not_called()
+        # 야구 질문은 계속 통과한다
+        self.assertNotEqual(dispatcher.route("잠실 주차 요금 얼마야?"), "scope")
+        self.assertNotEqual(dispatcher.route("자동차 가지고 잠실 가는데 주차 어디 해?"), "scope")
+
     def test_agent_failure_falls_back_to_domain(self):
         from .. import dispatcher
         with mock.patch.object(dispatcher.assistant, "answer", side_effect=RuntimeError("boom")), \
