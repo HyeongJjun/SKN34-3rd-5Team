@@ -1,0 +1,280 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "챗봇 RAG · 에이전트 흐름",
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "main",
+        "label": "질문에서 답변까지",
+        "focus": [
+          "question",
+          "chat",
+          "dispatcher",
+          "retrieve",
+          "agent",
+          "finalize",
+          "answer"
+        ],
+        "note": "검색 → 에이전트 → 말투 정리를 거쳐 화면에 도착"
+      },
+      {
+        "id": "tools",
+        "label": "검색과 도구",
+        "focus": [
+          "retrieve",
+          "vector",
+          "agent",
+          "tools"
+        ],
+        "note": "문서는 pgvector, 일정 · 순위 · 가격 · 장소 · 코스는 도구"
+      },
+      {
+        "id": "safety",
+        "label": "차단",
+        "focus": [
+          "dispatcher",
+          "scope"
+        ],
+        "note": "야구와 무관한 질문은 LLM 없이 바로 안내"
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "front",
+      "label": "화면 · Django 백엔드"
+    },
+    {
+      "id": "rag",
+      "label": "RAG 파이프라인"
+    },
+    {
+      "id": "tools",
+      "label": "데이터 · 도구 · 차단"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake",
+      "label": "요청",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "think",
+      "label": "검색 + 생성",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "reply",
+      "label": "응답",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "question",
+    "chat",
+    "dispatcher",
+    "retrieve",
+    "agent",
+    "finalize",
+    "answer"
+  ],
+  "nodes": [
+    {
+      "id": "question",
+      "lane": "front",
+      "col": 0,
+      "type": "external",
+      "label": "질문",
+      "sublabel": "구장 선택 + 질문",
+      "width": 132
+    },
+    {
+      "id": "chat",
+      "lane": "front",
+      "col": 1,
+      "type": "backend",
+      "label": "ChatService",
+      "sublabel": "chat_chain()",
+      "width": 132
+    },
+    {
+      "id": "dispatcher",
+      "lane": "front",
+      "col": 2,
+      "type": "security",
+      "label": "dispatcher",
+      "sublabel": "야구 관련 질문?",
+      "tag": "LLM 0회",
+      "width": 132
+    },
+    {
+      "id": "answer",
+      "lane": "front",
+      "col": 5,
+      "type": "frontend",
+      "label": "답변 + 지도",
+      "sublabel": "SSE 스트리밍",
+      "width": 132
+    },
+    {
+      "id": "retrieve",
+      "lane": "rag",
+      "col": 3,
+      "type": "backend",
+      "label": "retrieve · prompt",
+      "sublabel": "문서 6개 · 대화 8개",
+      "width": 132
+    },
+    {
+      "id": "agent",
+      "lane": "rag",
+      "col": 4,
+      "type": "backend",
+      "label": "agent",
+      "sublabel": "create_agent",
+      "tag": "LLM 1~5회",
+      "width": 132
+    },
+    {
+      "id": "finalize",
+      "lane": "rag",
+      "col": 5,
+      "type": "backend",
+      "label": "parse · 말투",
+      "sublabel": "persona.finalize",
+      "width": 132
+    },
+    {
+      "id": "scope",
+      "lane": "tools",
+      "col": 2,
+      "type": "security",
+      "label": "범위 밖 안내",
+      "sublabel": "고정 문구",
+      "width": 132
+    },
+    {
+      "id": "vector",
+      "lane": "tools",
+      "col": 3,
+      "type": "database",
+      "label": "pgvector",
+      "sublabel": "3,839청크 · HNSW",
+      "width": 132
+    },
+    {
+      "id": "tools",
+      "lane": "tools",
+      "col": 4,
+      "type": "database",
+      "label": "도구 9개",
+      "sublabel": "야구 DB · 카카오 · 코스",
+      "tag": "읽기 전용",
+      "width": 132
+    }
+  ],
+  "edges": [
+    {
+      "id": "send",
+      "from": "question",
+      "to": "chat",
+      "label": "전송",
+      "variant": "emphasis"
+    },
+    {
+      "id": "route",
+      "from": "chat",
+      "to": "dispatcher"
+    },
+    {
+      "id": "related",
+      "from": "dispatcher",
+      "to": "retrieve",
+      "label": "관련",
+      "variant": "emphasis"
+    },
+    {
+      "id": "search",
+      "from": "retrieve",
+      "to": "vector",
+      "label": "검색"
+    },
+    {
+      "id": "generate",
+      "from": "retrieve",
+      "to": "agent",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "call-tools",
+      "from": "agent",
+      "to": "tools",
+      "label": "필요할 때",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "parse",
+      "from": "agent",
+      "to": "finalize",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "stream",
+      "from": "finalize",
+      "to": "answer",
+      "label": "SSE",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "off-topic",
+      "from": "dispatcher",
+      "to": "scope",
+      "label": "무관",
+      "variant": "security",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "한 줄 체인",
+      "items": [
+        "retrieve | build_prompt | agent | parse_output",
+        "스위치 없이 모든 질문이 같은 길로"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "정본 우선순위",
+      "items": [
+        "일정 · 순위 · 가격은 DB 도구 결과를 믿음",
+        "규정 · 시설 · 먹거리는 문서 검색"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "안전장치",
+      "items": [
+        "야구 무관 질문은 LLM 없이 차단",
+        "에이전트 실패 시 기존 도메인(course · venue · club)이 대신 답함"
+      ]
+    }
+  ]
+}

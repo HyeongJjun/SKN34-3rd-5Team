@@ -1,0 +1,35 @@
+erDiagram
+    Document ||--o{ DocumentChunk : has
+    Document {
+        int id PK
+        string title
+        string source
+    }
+    DocumentChunk {
+        int id PK
+        int document_id FK
+        text content
+        int chunk_index
+        jsonb metadata "doc_id, category, stadium_code, status, evidence_type"
+        vector embedding "1536, HNSW cosine"
+    }
+    ChatSession ||--o{ ChatMessage : has
+    ChatSession ||--o{ ChatTurn : has
+    ChatSession {
+        int id PK
+        int user_id FK
+        string title
+    }
+    ChatMessage {
+        int id PK
+        int session_id FK
+        int sequence_no
+        string role "human or ai"
+        text message
+    }
+    ChatTurn {
+        uuid id PK
+        int session_id FK
+        text question
+        string status "pending, completed, stopped"
+    }
