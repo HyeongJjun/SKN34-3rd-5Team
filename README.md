@@ -287,7 +287,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 <p align="center"><a href="./docs/architecture/data_pipeline.html"><img src="./docs/images/data_pipeline.gif" width="95%" alt="데이터 수집 · 전처리 · 인덱싱 흐름 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/data_pipeline.png">PNG</a> · <a href="./docs/images/data_pipeline.svg">SVG</a> · PPT용 영상 <a href="./docs/media/data_pipeline.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/data_pipeline.html">인터랙티브 HTML</a></sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/data_pipeline.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 ### 5.4 전처리 규칙
 
@@ -319,7 +319,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 <p align="center"><a href="./docs/architecture/chat_pipeline.html"><img src="./docs/images/chat_pipeline.gif" width="95%" alt="챗봇 RAG · 에이전트 흐름 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/chat_pipeline.png">PNG</a> · <a href="./docs/images/chat_pipeline.svg">SVG</a> · PPT용 영상 <a href="./docs/media/chat_pipeline.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/chat_pipeline.html">인터랙티브 HTML</a></sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/chat_pipeline.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 ```
 질문 → dispatcher(야구 무관만 차단, LLM 0회)
@@ -360,7 +360,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 <p align="center"><a href="./docs/architecture/course_sequence.html"><img src="./docs/images/course_sequence.gif" width="95%" alt="직관 코스 추천 순서 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/course_sequence.png">PNG</a> · <a href="./docs/images/course_sequence.svg">SVG</a> · PPT용 영상 <a href="./docs/media/course_sequence.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/course_sequence.html">인터랙티브 HTML</a></sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/course_sequence.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 > **좌표 환각이 0인 이유**: LLM에게서 받는 것은 `place_key · phase · reason · intro`뿐이고, 이름 · 좌표 · 주소 · 시각 · 거리는 전부 DB 값이거나 코드가 계산한 값입니다.
 
@@ -391,7 +391,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 <p align="center"><a href="./docs/architecture/system_architecture.html"><img src="./docs/images/system_architecture.gif" width="100%" alt="시스템 아키텍처 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/system_architecture.png">PNG</a> · <a href="./docs/images/system_architecture.svg">SVG</a> · PPT용 영상 <a href="./docs/media/system_architecture.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/system_architecture.html">인터랙티브 HTML</a></sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/system_architecture.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 | 계층 | 구성 | 역할 |
 | --- | --- | --- |
@@ -404,7 +404,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | Storage · Mail | MinIO · Mailpit | 커뮤니티 이미지, 비밀번호 재설정 메일 |
 | Ops | Docker Compose · GitHub Actions → EC2 · LangSmith | 빌드 · 배포, LLM 호출 추적 |
 
-> 다이어그램 전체 목록과 README · PPT 사용법: [`docs/architecture/README.md`](./docs/architecture/README.md)
+> 다이어그램 전체 목록: [`docs/architecture/README.md`](./docs/architecture/README.md)
 
 **인덱싱과 서빙을 분리**했습니다. 무거운 작업(파일 로딩 · 청킹 · 임베딩 · 적재)은 오프라인 `build_index`가 한 번 하고, 요청 때는 검색과 생성만 합니다.
 
@@ -414,7 +414,6 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 <p align="center"><img src="./docs/images/erd.png" width="90%" alt="데이터베이스 ERD"/></p>
 
-<sub>원본: <code>docs/diagrams/erd.mmd</code> · 다시 그리기: <code>bash docs/diagrams/render.sh</code> (Mermaid)</sub>
 
 | 영역 | 주요 테이블 |
 | --- | --- |
@@ -456,10 +455,8 @@ SKN34-3rd-5Team/
 │   └── preprocessed/            # 전처리 결과 CSV 21종
 ├── docs/
 │   ├── deliverables/            # 🔴 필수 산출물 문서 4종
-│   ├── architecture/            # archify 인터랙티브 HTML · 원본 JSON · 그림/영상 재생성 스크립트
-│   ├── media/                   # PPT용 흐름 영상 (MP4 · WebM)
-│   ├── images/                  # README · 산출물 그림 (GIF · PNG · SVG)
-│   ├── diagrams/                # ERD 등 Mermaid 원본 · 차트 코드 + render.sh
+│   ├── architecture/            # archify 인터랙티브 HTML · 원본 JSON
+│   ├── images/                  # README · 산출물 그림 (GIF · PNG)
 │   └── test_results/            # 최종 평가 결과 CSV · 골든셋
 ├── rag_test/                    # 골든셋 평가 스크립트 (STEP 1~5)
 ├── contracts/openapi.yaml       # API 계약
@@ -525,7 +522,7 @@ docker compose exec backend python manage.py check_index
 
 <p align="center"><a href="./docs/architecture/ux_flow.html"><img src="./docs/images/ux_flow.gif" width="95%" alt="화면 흐름 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/ux_flow.png">PNG</a> · <a href="./docs/images/ux_flow.svg">SVG</a> · PPT용 영상 <a href="./docs/media/ux_flow.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/ux_flow.html">인터랙티브 HTML</a></sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/ux_flow.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 | 화면 | 설명 | 캡처 |
 | --- | --- | --- |
@@ -564,7 +561,7 @@ docker compose exec backend python manage.py check_index
 
 <p align="center"><a href="./docs/architecture/deploy_cicd.html"><img src="./docs/images/deploy_cicd.gif" width="95%" alt="협업 · CI/CD 배포 흐름 (움직이는 그림)"/></a></p>
 
-<sub>▶ 선을 따라 흐름이 움직입니다 · 정지 그림 <a href="./docs/images/deploy_cicd.png">PNG</a> · <a href="./docs/images/deploy_cicd.svg">SVG</a> · PPT용 영상 <a href="./docs/media/deploy_cicd.mp4">MP4</a> · 클릭하면 확대 · 단계별 설명이 되는 <a href="./docs/architecture/deploy_cicd.html">인터랙티브 HTML</a></sub>
+<sub>▶ 선을 따라 흐름이 움직입니다 · 단계별 설명이 되는 <a href="./docs/architecture/deploy_cicd.html">인터랙티브 HTML</a> (내려받아 브라우저로 열기)</sub>
 
 - **CI** — develop 대상 PR · push마다 Django `manage.py check` + Next.js `build`
 - **CD** — develop push 시 `appleboy/ssh-action`으로 EC2에 접속해 재빌드 (비밀값은 GitHub Secrets `EC2_HOST` · `EC2_USER` · `EC2_SSH_KEY`)
