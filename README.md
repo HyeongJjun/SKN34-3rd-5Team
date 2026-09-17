@@ -60,7 +60,7 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 
 <table>
   <tr>
-    <td align="center"><img src="docs/프로필 이미지/두산_마스코트.png" width="120"/><br/><b>윤성호</b><br/>백엔드</td>
+    <td align="center"><img src="./docs/images/두산_마스코트.png" width="120"/><br/><b>윤성호</b><br/>백엔드</td>
     <td align="center"><img src="./docs/images/team/member-hyeongjun.png" width="120" height="120"/><br/><b>임형준</b><br/>데이터 · RAG · LLM</td>
     <td align="center"><img src="https://img-cdn.theqoo.net/cujCms.jpg" width="120"/><br/><b>이현준</b><br/>인프라 · RAG · LLM</td>
     <td align="center"><img src="./docs/images/team/member-inyoung.png" width="120" height="120"/><br/><b>최인영</b><br/>프론트엔드</td>
