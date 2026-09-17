@@ -64,14 +64,14 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
     <td align="center"><img src="https://github.com/HyeongJjun.png?size=240" width="120"/><br/><b>임형준</b><br/>데이터 · RAG · LLM</td>
     <td align="center"><img src="https://github.com/gksrkd2.png?size=240" width="120"/><br/><b>이현준</b><br/>인프라 · RAG · LLM</td>
     <td align="center"><img src="https://github.com/inyoung9629.png?size=240" width="120"/><br/><b>최인영</b><br/>프론트엔드</td>
-    <td align="center"><!-- 사진: <img src="./docs/images/team/member5.png" width="120"/> --><br/><b>[TODO] 이름</b><br/>[TODO] 역할</td>
+    <td align="center"><img src="https://github.com/masquerade0425-hash.png?size=240" width="120"/> --><br/><b>김진화</b><br/>DB</td>
   </tr>
   <tr>
     <td align="center"><a href="https://github.com/Seongho-haru"><img src="https://img.shields.io/badge/GitHub-Seongho--haru-181717?logo=github"/></a></td>
     <td align="center"><a href="https://github.com/HyeongJjun"><img src="https://img.shields.io/badge/GitHub-HyeongJjun-181717?logo=github"/></a></td>
     <td align="center"><a href="https://github.com/gksrkd2"><img src="https://img.shields.io/badge/GitHub-gksrkd2-181717?logo=github"/></a></td>
     <td align="center"><a href="https://github.com/inyoung9629"><img src="https://img.shields.io/badge/GitHub-inyoung9629-181717?logo=github"/></a></td>
-    <td align="center"><a href="https://github.com/[TODO]"><img src="https://img.shields.io/badge/GitHub-[TODO]-181717?logo=github"/></a></td>
+    <td align="center"><a href="https://github.com/masquerade0425-hash"><img src="https://img.shields.io/badge/GitHub-masquerade0425_hash-black"/></a></td>
   </tr>
 </table>
 
@@ -83,7 +83,8 @@ SKN34 3차 프로젝트 · 5팀 [TODO: 팀명]
 | 임형준 | 팀장 · 데이터 · RAG · LLM | 데이터 수집·전처리, 청킹·임베딩(pgvector), RAG·에이전트 파이프라인, RAG 성능 평가 , 검색(pgvector), 프롬프트, README · 산출물 문서, PR 리뷰·머지 |
 | 이현준 | 인프라 · RAG · LLM  | Docker Compose, GitHub Actions CI/CD, EC2 배포, 구장정보 에이전트, 검색(pgvector), 프롬프트 |
 | 최인영 | 프론트엔드 | 데이터 수집 , Next.js 화면, 직관 코스 기능 구현· 커뮤니티 · 회원 UI |
-| [TODO: masquerade0425] | [TODO] DB | baseball 도메인 ERD · DB 스키마 |
+| 김진화 | DB | baseball 도메인 ERD · DB 스키마, 사용자 테스트(임시) |
+
 
 ---
 
@@ -903,7 +904,7 @@ python manage.py test baseball.tests.test_query_service
 | 임형준 | 이번 프로젝트에서 LLM 파이프라인, Docker, Git Flow를 처음 제대로 써 봤습니다. RAG와 에이전트 도구를 붙이고, 컨테이너로 묶고, Fork·PR로 협업하는 것까지 배울 게 많아서 힘든 점이 있었습니다.<br/>그래도 막힐 때마다 팀원들이 바로 도와주고, 각자 맡은 기능을 잘 구현해 준 덕분에 정해진 기한 안에 마무리할 수 있었습니다.<br/>4차에서는 응답 속도와 데이터 갱신 같은 고도화, 그리고 마무리까지 더 잘 해내겠습니다. |
 | 이현준 | |
 | 최인영 | |
-| [TODO] | |
+| 김진화 | 데이터베이스/ERD 작성 파트를 처음 맡아 봐서 우여곡절이 많았는데, 팀원들이 원하는 요구사항을 정확히 이야기해 줘서 훨씬 수월하게 진행했던 것 같습니다. 협업 시스템도, 여기 들어가기 전에는 거의 혼자 하거나, 아예 연동이 거의 안 되는 시스템을 별도로 하나씩 만든 다음 호환성을 담당하는 사람이 진행하는 구조여서 잘 못했던 걸, 친절한 사람들과 배워가면서 한 게 참 좋았던 것 같습니다. |
 
 ---
 
